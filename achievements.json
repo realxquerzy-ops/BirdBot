@@ -1,0 +1,38 @@
+{
+    "1398037139891028038": {
+        "1003699697329905704": [
+            "it_begins",
+            "likes_birds",
+            "is_a_bird",
+            "milk"
+        ],
+        "1469734369739538677": [
+            "pip",
+            "it_begins",
+            "likes_birds",
+            "milk",
+            "not_again",
+            "perfect",
+            "is_a_bird"
+        ]
+    },
+    "1536384654591135854": {
+        "1025571189978058803": [
+            "it_begins",
+            "likes_birds",
+            "perfect"
+        ],
+        "1469734369739538677": [
+            "it_begins",
+            "likes_birds"
+        ]
+    },
+    "1511406716749611171": {
+        "1469734369739538677": [
+            "it_begins",
+            "likes_birds",
+            "is_a_bird",
+            "perfect"
+        ]
+    }
+}

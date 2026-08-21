@@ -1,0 +1,92 @@
+[
+    {
+        "name": "Bird",
+        "sticker_id": 1539912459333140591,
+        "weight": 30.0,
+        "value": 1
+    },
+    {
+        "name": "Good Bird",
+        "sticker_id": 1539732798217261186,
+        "weight": 22.0,
+        "value": 2
+    },
+    {
+        "name": "Fat Bird",
+        "sticker_id": 1539941434004738128,
+        "weight": 13.0,
+        "value": 3.6
+    },
+    {
+        "name": "Chick",
+        "sticker_id": 1540105760409788477,
+        "weight": 9.0,
+        "value": 5.4
+    },
+    {
+        "name": "Yellow Bird",
+        "sticker_id": 1540087019357736960,
+        "weight": 7.0,
+        "value": 6.3
+    },
+    {
+        "name": "Scarlet Mascow",
+        "sticker_id": 1540398790609997886,
+        "weight": 5.5,
+        "value": 7.1
+    },
+    {
+        "name": "Alpha Bird",
+        "sticker_id": 1539935042027913296,
+        "weight": 4.5,
+        "value": 8.0
+    },
+    {
+        "name": "Cool Bird",
+        "sticker_id": 1540421746895757412,
+        "weight": 3.5,
+        "value": 9.0
+    },
+    {
+        "name": "Angry Bird",
+        "sticker_id": 1540101590688465037,
+        "weight": 2.5,
+        "value": 10.0
+    },
+    {
+        "name": "Unknowmyt Bird",
+        "sticker_id": 1540424973368299560,
+        "weight": 2.0,
+        "value": 11.5
+    },
+    {
+        "name": "Golden Bird",
+        "sticker_id": 1539980651283877908,
+        "weight": 1.5,
+        "value": 13.2
+    },
+    {
+        "name": "Rainbow Bird",
+        "sticker_id": 1540114645132648478,
+        "weight": 0.8,
+        "value": 19.6
+    },
+    {
+        "name": "Tennis Bird",
+        "sticker_id": 1540321518440161360,
+        "weight": 0.4,
+        "value": 26.0
+    },
+    {
+        "name": "Bird 618",
+        "sticker_id": 1540321587780124693,
+        "weight": 0.2,
+        "value": 35.0
+    },
+    {
+        "name": "Radioactive Bird",
+        "sticker_id": 1540372078660952175,
+        "weight": 0.1,
+        "value": 50
+    }
+]
