@@ -28,10 +28,12 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS pip_claims (
     PRIMARY KEY (guild_id, user_id)
 )''')
 
+# DÜZELTİLDİ: games.py ile uyumlu olması için sütun adı 'achievements' yapıldı ve PRIMARY KEY eklendi
 cursor.execute('''CREATE TABLE IF NOT EXISTS achievements (
     guild_id INTEGER,
     user_id INTEGER,
-    achievement_name TEXT
+    achievements TEXT,
+    PRIMARY KEY (guild_id, user_id)
 )''')
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS birds_data (
