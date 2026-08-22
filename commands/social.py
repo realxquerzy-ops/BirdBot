@@ -1,7 +1,8 @@
 import discord
 from discord.ext import commands
+import json
 
-class QuantityModal(discord.ui.Modal):
+class MultiQuantityModal(discord.ui.Modal):
     def __init__(self, select_item, max_count, view_instance):
         super().__init__(title="Select Quantity")
         self.select_item = select_item
@@ -26,7 +27,13 @@ class QuantityModal(discord.ui.Modal):
             await interaction.response.send_message(f"❌ Please enter a valid number between 1 and {self.max_count}!", ephemeral=True)
             return
 
-        self.select_item.selected_count = val
+        bird_name = self.select_item.selected_bird_temp
+        # Seçilen kuş ve miktarı kullanıcının teklif listesine ekle/güncelle
+        self.view_instance.add_offer(self.select_item.owner_id, bird_name, val)
+        
+        if hasattr(self.view_instance, "confirmed_users"):
+            self.view_instance.confirmed_users.clear()
+
         await interaction.response.edit_message(content=self.view_instance.update_status_text(), view=self.view_instance)
 
 class TradeSelect(discord.ui.Select):
@@ -42,8 +49,7 @@ class TradeSelect(discord.ui.Select):
             options = [discord.SelectOption(label="No birds available", description="You have no birds")]
             
         super().__init__(placeholder=placeholder, min_values=1, max_values=1, options=options)
-        self.selected_bird = None
-        self.selected_count = 0
+        self.selected_bird_temp = None
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
@@ -54,13 +60,10 @@ class TradeSelect(discord.ui.Select):
             await interaction.response.send_message("❌ You don't have any birds to select!", ephemeral=True)
             return
 
-        self.selected_bird = self.values[0]
-        max_count = self.user_birds.count(self.selected_bird)
-        
-        if hasattr(self.view, "confirmed_users"):
-            self.view.confirmed_users.clear()
+        self.selected_bird_temp = self.values[0]
+        max_count = self.user_birds.count(self.selected_bird_temp)
 
-        modal = QuantityModal(self, max_count, self.view)
+        modal = MultiQuantityModal(self, max_count, self.view)
         await interaction.response.send_modal(modal)
 
 class TradeConfirmView(discord.ui.View):
@@ -72,36 +75,89 @@ class TradeConfirmView(discord.ui.View):
         self.guild_id = guild_id
         self.confirmed_users = set()
 
-        guild_inv = bot.server_inventories.get(guild_id, {})
-        self.init_birds = guild_inv.get(str(initiator.id), [])
-        self.target_birds = guild_inv.get(str(target.id), [])
+        # Teklifler sözlüğü: {user_id: {bird_name: count, ...}}
+        self.offers = {
+            initiator.id: {},
+            target.id: {}
+        }
 
-        self.init_select = TradeSelect(self.init_birds, f"{initiator.name}'s offer", initiator.id, bot.bird_values)
-        self.target_select = TradeSelect(self.target_birds, f"{target.name}'s offer", target.id, bot.bird_values)
+        cursor = bot.db_cursor
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(guild_id), initiator.id))
+        init_row = cursor.fetchone()
+        self.init_birds = json.loads(init_row[0]) if init_row else []
+
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(guild_id), target.id))
+        target_row = cursor.fetchone()
+        self.target_birds = json.loads(target_row[0]) if target_row else []
+
+        bird_values = {}
+        for bird in bot.birds:
+            bird_values[bird["name"].lower()] = bird.get("value", 1)
+
+        self.init_select = TradeSelect(self.init_birds, f"{initiator.name}: Add birds to offer", initiator.id, bird_values)
+        self.target_select = TradeSelect(self.target_birds, f"{target.name}: Add birds to offer", target.id, bird_values)
         
         self.add_item(self.init_select)
         self.add_item(self.target_select)
 
+    def add_offer(self, user_id, bird_name, count):
+        self.offers[user_id][bird_name] = count
+
+    def format_offer_list(self, user_id):
+        user_offer = self.offers.get(user_id, {})
+        if not user_offer:
+            return "Nothing selected"
+        
+        items = []
+        for bird, count in user_offer.items():
+            items.append(f"`{count}x {bird}`")
+        return ", ".join(items)
+
     def update_status_text(self):
-        init_offer = f"{self.init_select.selected_count}x {self.init_select.selected_bird}" if self.init_select.selected_bird else "Nothing selected"
-        target_offer = f"{self.target_select.selected_count}x {self.target_select.selected_bird}" if self.target_select.selected_bird else "Nothing selected"
+        init_offer_str = self.format_offer_list(self.initiator.id)
+        target_offer_str = self.format_offer_list(self.target.id)
 
         init_status = "✅ Confirmed" if self.initiator.id in self.confirmed_users else "⏳ Pending..."
         target_status = "✅ Confirmed" if self.target.id in self.confirmed_users else "⏳ Pending..."
 
         return (
-            f"🤝 Trade active between **{self.initiator.name}** and **{self.target.name}**.\n\n"
-            f"🔵 **{self.initiator.name}'s Offer:** {init_offer} ({init_status})\n"
-            f"🟢 **{self.target.name}'s Offer:** {target_offer} ({target_status})"
+            f"🤝 **Active Trade** between **{self.initiator.name}** and **{self.target.name}**\n\n"
+            f"🔵 **{self.initiator.name}'s Offer:**\n{init_offer_str} — *({init_status})*\n\n"
+            f"🟢 **{self.target.name}'s Offer:**\n{target_offer_str} — *({target_status})*"
         )
 
     async def unlock_achievement(self, user_id, ach_id, channel=None):
-        user_id_str = str(user_id)
-        if user_id_str not in self.bot.achievements_data:
-            self.bot.achievements_data[user_id_str] = []
-        if ach_id not in self.bot.achievements_data[user_id_str]:
-            self.bot.achievements_data[user_id_str].append(ach_id)
-            self.bot.save_json("achievements.json", self.bot.achievements_data)
+        user_id_val = int(user_id)
+        guild_id_val = int(self.guild_id)
+
+        cursor = self.bot.db_cursor
+        conn = self.bot.db_conn
+
+        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = ? AND user_id = ?", (guild_id_val, user_id_val))
+        row = cursor.fetchone()
+        user_achievements = json.loads(row[0]) if row else []
+
+        if ach_id not in user_achievements:
+            user_achievements.append(ach_id)
+            cursor.execute("""
+                INSERT OR REPLACE INTO achievements (guild_id, user_id, achievements) 
+                VALUES (?, ?, ?)
+            """, (guild_id_val, user_id_val, json.dumps(user_achievements)))
+            conn.commit()
+
+            social_cog = self.bot.get_cog("SocialCog")
+            if social_cog and channel:
+                ach_info = social_cog.ACHIEVEMENTS_LIST.get(ach_id)
+                if ach_info:
+                    try:
+                        embed = discord.Embed(
+                            title="🏆 Achievement Unlocked!",
+                            description=f"<@{user_id}> unlocked **{ach_info['name']}**!\n-# {ach_info['desc']}",
+                            color=discord.Color.gold()
+                        )
+                        await channel.send(embed=embed)
+                    except Exception as e:
+                        print(f"Could not send achievement notification: {e}")
 
     @discord.ui.button(label="Confirm Trade", style=discord.ButtonStyle.green, row=2)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -109,8 +165,8 @@ class TradeConfirmView(discord.ui.View):
             await interaction.response.send_message("You are not part of this trade!", ephemeral=True)
             return
 
-        if not self.init_select.selected_bird or self.init_select.selected_count <= 0 or not self.target_select.selected_bird or self.target_select.selected_count <= 0:
-            await interaction.response.send_message("Both users must select a bird and a valid quantity to trade!", ephemeral=True)
+        if not self.offers[self.initiator.id] or not self.offers[self.target.id]:
+            await interaction.response.send_message("Both users must select at least one bird to trade!", ephemeral=True)
             return
 
         self.confirmed_users.add(interaction.user.id)
@@ -119,63 +175,77 @@ class TradeConfirmView(discord.ui.View):
             await interaction.response.edit_message(content=self.update_status_text(), view=self)
             return
 
-        init_bird = self.init_select.selected_bird
-        init_count = self.init_select.selected_count
-        target_bird = self.target_select.selected_bird
-        target_count = self.target_select.selected_count
+        guild_id_int = int(self.guild_id)
+        init_id = self.initiator.id
+        target_id = self.target.id
 
-        guild_inv = self.bot.server_inventories[self.guild_id]
-        init_id = str(self.initiator.id)
-        target_id = str(self.target.id)
+        cursor = self.bot.db_cursor
+        conn = self.bot.db_conn
 
-        init_user_birds = guild_inv.get(init_id, [])
-        target_user_birds = guild_inv.get(target_id, [])
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id_int, init_id))
+        init_row = cursor.fetchone()
+        init_user_birds = json.loads(init_row[0]) if init_row else []
 
-        if init_user_birds.count(init_bird) >= init_count and target_user_birds.count(target_bird) >= target_count:
-            for _ in range(init_count):
-                init_user_birds.remove(init_bird)
-                target_user_birds.append(init_bird)
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id_int, target_id))
+        target_row = cursor.fetchone()
+        target_user_birds = json.loads(target_row[0]) if target_row else []
 
-            for _ in range(target_count):
-                target_user_birds.remove(target_bird)
-                init_user_birds.append(target_bird)
+        # Envanter yeterlilik kontrolü
+        can_trade = True
+        for bird, count in self.offers[init_id].items():
+            if init_user_birds.count(bird) < count:
+                can_trade = False
+                break
+        for bird, count in self.offers[target_id].items():
+            if target_user_birds.count(bird) < count:
+                can_trade = False
+                break
 
-            self.bot.save_json("inventory.json", self.bot.server_inventories)
-
-            await self.unlock_achievement(self.initiator.id, "a_trade", interaction.channel)
-            await self.unlock_achievement(self.target.id, "a_trade", interaction.channel)
-
-            init_val = init_count * self.bot.bird_values.get(init_bird, 1)
-            target_val = target_count * self.bot.bird_values.get(target_bird, 1)
-
-            total_weight = sum(float(b["weight"]) for b in self.bot.birds)
-            for b_info in self.bot.birds:
-                if b_info["name"] == init_bird and total_weight > 0:
-                    pct = (float(b_info["weight"]) / total_weight) * 100
-                    if pct < 10.0 and target_val == 0:
-                        await self.unlock_achievement(self.initiator.id, "giveaway")
-                        
-                if b_info["name"] == target_bird and total_weight > 0:
-                    pct = (float(b_info["weight"]) / total_weight) * 100
-                    if pct < 10.0 and init_val == 0:
-                        await self.unlock_achievement(self.target.id, "giveaway")
-
-            if init_val > target_val * 3:
-                await self.unlock_achievement(self.target.id, "scammer")
-                await self.unlock_achievement(self.initiator.id, "scammed")
-            elif target_val > init_val * 3:
-                await self.unlock_achievement(self.initiator.id, "scammer")
-                await self.unlock_achievement(self.target.id, "scammed")
-
-            embed = discord.Embed(
-                title="🤝 Trade Successful!",
-                description=f"**{self.initiator.name}** gave `{init_count}x {init_bird}` and got `{target_count}x {target_bird}`!",
-                color=discord.Color.green()
-            )
-            await interaction.response.edit_message(content=None, embed=embed, view=None)
-            self.stop()
-        else:
+        if not can_trade:
             await interaction.response.send_message("❌ Trade failed! One of the users no longer has enough of the selected birds.", ephemeral=True)
+            return
+
+        # Takas işlemini gerçekleştir
+        for bird, count in self.offers[init_id].items():
+            for _ in range(count):
+                init_user_birds.remove(bird)
+                target_user_birds.append(bird)
+
+        for bird, count in self.offers[target_id].items():
+            for _ in range(count):
+                target_user_birds.remove(bird)
+                init_user_birds.append(bird)
+
+        cursor.execute("INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) VALUES (?, ?, ?)", (guild_id_int, init_id, json.dumps(init_user_birds)))
+        cursor.execute("INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) VALUES (?, ?, ?)", (guild_id_int, target_id, json.dumps(target_user_birds)))
+        conn.commit()
+
+        await self.unlock_achievement(self.initiator.id, "a_trade", interaction.channel)
+        await self.unlock_achievement(self.target.id, "a_trade", interaction.channel)
+
+        # Değer hesaplamaları ve başarımlar
+        bird_values = {b["name"].lower(): b.get("value", 1) for b in self.bot.birds}
+        
+        init_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[init_id].items())
+        target_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[target_id].items())
+
+        if init_val > target_val * 3:
+            await self.unlock_achievement(self.target.id, "scammer", interaction.channel)
+            await self.unlock_achievement(self.initiator.id, "scammed", interaction.channel)
+        elif target_val > init_val * 3:
+            await self.unlock_achievement(self.initiator.id, "scammer", interaction.channel)
+            await self.unlock_achievement(self.target.id, "scammed", interaction.channel)
+
+        init_summary = self.format_offer_list(init_id)
+        target_summary = self.format_offer_list(target_id)
+
+        embed = discord.Embed(
+            title="🤝 Trade Successful!",
+            description=f"**{self.initiator.name}** gave {init_summary} and received {target_summary} from **{self.target.name}**!",
+            color=discord.Color.green()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=None)
+        self.stop()
 
     @discord.ui.button(label="Cancel / Decline", style=discord.ButtonStyle.red, row=2)
     async def cancel_trade(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -199,16 +269,20 @@ class TradeRequestView(discord.ui.View):
             await interaction.response.send_message("Only the user who received the trade request can accept it!", ephemeral=True)
             return
         
-        guild_inv = self.bot.server_inventories.get(self.guild_id, {})
-        if not guild_inv.get(str(self.target.id), []):
+        cursor = self.bot.db_cursor
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(self.guild_id), self.target.id))
+        row = cursor.fetchone()
+        target_birds = json.loads(row[0]) if row else []
+
+        if not target_birds:
             await interaction.response.send_message("You don't have any birds to trade in this server!", ephemeral=True)
             return
 
         view = TradeConfirmView(self.bot, self.initiator, self.target, self.guild_id)
         content = (
-            f"🤝 Trade active between **{self.initiator.name}** and **{self.target.name}**.\n\n"
-            f"🔵 **{self.initiator.name}'s Offer:** Nothing selected (⏳ Pending...)\n"
-            f"🟢 **{self.target.name}'s Offer:** Nothing selected (⏳ Pending...)"
+            f"🤝 **Active Trade** between **{self.initiator.name}** and **{self.target.name}**\n\n"
+            f"🔵 **{self.initiator.name}'s Offer:**\nNothing selected — *(⏳ Pending...)*\n\n"
+            f"🟢 **{self.target.name}'s Offer:**\nNothing selected — *(⏳ Pending...)*"
         )
         await interaction.response.edit_message(content=content, view=view)
 
@@ -258,14 +332,17 @@ class SocialCog(commands.Cog):
             await interaction.followup.send("❌ You cannot trade with bots or yourself!", ephemeral=True)
             return
 
-        guild_id = str(interaction.guild.id)
-        guild_inv = self.bot.server_inventories.get(guild_id, {})
+        guild_id = interaction.guild.id
+        cursor = self.bot.db_cursor
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, interaction.user.id))
+        row = cursor.fetchone()
+        user_birds = json.loads(row[0]) if row else []
         
-        if not guild_inv.get(str(interaction.user.id), []):
+        if not user_birds:
             await interaction.followup.send("❌ You don't have any birds in your inventory to trade!", ephemeral=True)
             return
 
-        view = TradeRequestView(self.bot, interaction.user, member, guild_id)
+        view = TradeRequestView(self.bot, interaction.user, member, str(guild_id))
         await interaction.followup.send(content=f"🤝 {member.mention}, you have received a trade request from **{interaction.user.name}**!", view=view)
 
     @discord.app_commands.command(name="achievements", description="View your or another user's unlocked achievements")
@@ -274,8 +351,18 @@ class SocialCog(commands.Cog):
     async def achievements(self, interaction: discord.Interaction, member: discord.User = None):
         await interaction.response.defer()
         target_user = member or interaction.user
-        target_id = str(target_user.id)
-        user_ach = self.bot.achievements_data.get(target_id, [])
+        target_id = target_user.id
+        
+        cursor = self.bot.db_cursor
+        cursor.execute("SELECT achievements FROM achievements WHERE user_id = ?", (target_id,))
+        rows = cursor.fetchall()
+        
+        user_ach = []
+        for r in rows:
+            ach_list = json.loads(r[0])
+            for a in ach_list:
+                if a not in user_ach:
+                    user_ach.append(a)
         
         desc = ""
         for ach_id, info in self.ACHIEVEMENTS_LIST.items():
@@ -328,7 +415,8 @@ class SocialCog(commands.Cog):
             return
 
         guild_id = str(interaction.guild.id) if interaction.guild else "dm"
-        self.bot.spawn_states[guild_id] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
+        if hasattr(self.bot, "spawn_states"):
+            self.bot.spawn_states[guild_id] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
         await interaction.followup.send("🧹 **Debug:** Spawn lock has been successfully forced reset!", ephemeral=True)
 
     @discord.app_commands.command(name="setchannel", description="Set the channel where birds will spawn (Admin only)")
@@ -341,11 +429,15 @@ class SocialCog(commands.Cog):
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
 
-        guild_id = str(interaction.guild.id)
-        self.bot.server_settings[guild_id] = channel.id
-        self.bot.save_json("settings.json", self.bot.server_settings)
+        guild_id = interaction.guild.id
+        cursor = self.bot.db_cursor
+        conn = self.bot.db_conn
+
+        cursor.execute("INSERT OR REPLACE INTO guild_settings (guild_id, channel_id) VALUES (?, ?)", (guild_id, channel.id))
+        conn.commit()
         
-        self.bot.spawn_states[guild_id] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
+        if hasattr(self.bot, "spawn_states"):
+            self.bot.spawn_states[str(guild_id)] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
 
         embed = discord.Embed(
             title="⚙️ Setup Complete",
