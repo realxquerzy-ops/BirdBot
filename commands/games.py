@@ -73,11 +73,10 @@ class GamesCog(commands.Cog):
             if ach_info and channel:
                 try:
                     embed = discord.Embed(
-                        title="🏆 Achievement Unlocked!",
-                        description=f"<@{user_id}> unlocked **{ach_info['name']}**!\n-# {ach_info['desc']}",
+                        description=f"🏆 <@{user_id}> unlocked achievement: **{ach_info['name']}**!",
                         color=discord.Color.gold()
                     )
-                    await channel.send(embed=embed)
+                    await channel.send(embed=embed, delete_after=10)
                 except Exception as e:
                     print(f"Could not send achievement notification: {e}")
 

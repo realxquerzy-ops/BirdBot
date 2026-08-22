@@ -42,7 +42,7 @@ class TradeSelect(discord.ui.Select):
         self.bird_values = bird_values
         unique_birds = list(set(user_birds))
         
-        options = [discord.SelectOption(label=bird, description=f"Value: {bird_values.get(bird, 1)} | Available: {user_birds.count(bird)}") for bird in unique_birds[:25]]
+        options = [discord.SelectOption(label=bird, description=f"Value: {bird_values.get(bird.lower(), 1)} | Available: {user_birds.count(bird)}") for bird in unique_birds[:25]]
         
         if not options:
             options = [discord.SelectOption(label="No birds available", description="You have no birds")]
@@ -133,7 +133,7 @@ class TradeConfirmView(discord.ui.View):
 
         cursor.execute("SELECT achievements FROM achievements WHERE guild_id = ? AND user_id = ?", (guild_id_val, user_id_val))
         row = cursor.fetchone()
-        user_achievements = json.loads(row[0]) if row else []
+        user_achievements = json.loads(row[0]) if row and row[0] else []
 
         if ach_id not in user_achievements:
             user_achievements.append(ach_id)
@@ -149,11 +149,10 @@ class TradeConfirmView(discord.ui.View):
                 if ach_info:
                     try:
                         embed = discord.Embed(
-                            title="🏆 Achievement Unlocked!",
-                            description=f"<@{user_id}> unlocked **{ach_info['name']}**!\n-# {ach_info['desc']}",
+                            description=f"🏆 <@{user_id}> unlocked achievement: **{ach_info['name']}**!",
                             color=discord.Color.gold()
                         )
-                        await channel.send(embed=embed)
+                        await channel.send(embed=embed, delete_after=10)
                     except Exception as e:
                         print(f"Could not send achievement notification: {e}")
 
@@ -182,11 +181,11 @@ class TradeConfirmView(discord.ui.View):
 
         cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id_int, init_id))
         init_row = cursor.fetchone()
-        init_user_birds = json.loads(init_row[0]) if init_row else []
+        init_user_birds = json.loads(init_row[0]) if init_row and init_row[0] else []
 
         cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id_int, target_id))
         target_row = cursor.fetchone()
-        target_user_birds = json.loads(target_row[0]) if target_row else []
+        target_user_birds = json.loads(target_row[0]) if target_row and target_row[0] else []
 
         can_trade = True
         for bird, count in self.offers[init_id].items():
@@ -267,7 +266,7 @@ class TradeRequestView(discord.ui.View):
         cursor = self.bot.db_cursor
         cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(self.guild_id), self.target.id))
         row = cursor.fetchone()
-        target_birds = json.loads(row[0]) if row else []
+        target_birds = json.loads(row[0]) if row and row[0] else []
 
         if not target_birds:
             await interaction.response.send_message("You don't have any birds to trade in this server!", ephemeral=True)
@@ -310,7 +309,7 @@ class SocialCog(commands.Cog):
         cursor = self.bot.db_cursor
         cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, interaction.user.id))
         row = cursor.fetchone()
-        user_birds = json.loads(row[0]) if row else []
+        user_birds = json.loads(row[0]) if row and row[0] else []
         
         if not user_birds:
             await interaction.followup.send("❌ You don't have any birds in your inventory to trade!", ephemeral=True)

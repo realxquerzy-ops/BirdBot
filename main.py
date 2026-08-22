@@ -86,11 +86,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     print(f"{bot.user} olarak giriş yapıldı!")
     
-    for filename in os.listdir("./commands"):
-        if filename.endswith(".py") and filename != "__init__.py":
-            cog_name = f"commands.{filename[:-3]}"
-            await bot.load_extension(cog_name)
-            print(f"Modül yüklendi: {cog_name}")
+    if os.path.exists("./commands"):
+        for filename in os.listdir("./commands"):
+            if filename.endswith(".py") and filename != "__init__.py":
+                cog_name = f"commands.{filename[:-3]}"
+                await bot.load_extension(cog_name)
+                print(f"Modül yüklendi: {cog_name}")
             
     try:
         synced = await bot.tree.sync()
