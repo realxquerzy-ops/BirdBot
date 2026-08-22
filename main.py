@@ -1,7 +1,20 @@
+import sqlite3
 import discord
 from discord.ext import commands
 import os
 import json
+from dotenv import load_dotenv
+
+# Railway veya lokal ortamdaki değişkenleri okumak için
+load_dotenv()
+
+# Veritabanını bağla (dosya yoksa otomatik oluşturur)
+conn = sqlite3.connect('bot_data.db', check_same_thread=False)
+cursor = conn.cursor()
+
+# Tabloları oluştur (Bir kere çalışması yeterli)
+cursor.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, balance INTEGER, inventory TEXT)''')
+conn.commit()
 
 # JSON Yükleme / Kaydetme Araçları (Ortak Kullanım)
 INVENTORY_FILE = "inventory.json"
@@ -79,6 +92,12 @@ bot.achievements_data = achievements_data
 bot.spawn_states = spawn_states
 bot.load_json = load_json
 bot.save_json = save_json
+bot.db_conn = conn
+bot.db_cursor = cursor
 
-# Token'ını buraya yaz
-bot.run("MTUzOTkwMzcxODAzMDQ0MjU3Nw.GNxKLL.z_G0LSHO-3lArb2tjtybTpJozRQcgLUl3z40sw")
+# Token'ı güvenli bir şekilde Railway Variables'tan çekiyoruz
+TOKEN = os.getenv("DISCORD_TOKEN")
+if not TOKEN:
+    print("❌ HATA: DISCORD_TOKEN bulunamadı! Lütfen Railway Variables kısmına veya .env dosyasına ekleyin.")
+else:
+    bot.run(TOKEN)
