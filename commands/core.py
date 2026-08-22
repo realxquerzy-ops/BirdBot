@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 import random
 import asyncio
 import time
+import json
 
 class CoreCog(commands.Cog):
     def __init__(self, bot):
@@ -15,12 +16,20 @@ class CoreCog(commands.Cog):
     def cog_unload(self):
         self.bird_spawner.cancel()
 
+    # Veritabanından sunucu ayarlarını (kanal ID'lerini) çeken yardımcı fonksiyon
+    def get_all_server_settings(self):
+        cursor = self.bot.db_cursor
+        cursor.execute("SELECT guild_id, channel_id FROM guild_settings")
+        return {str(row[0]): row[1] for row in cursor.fetchall()}
+
     @tasks.loop(seconds=60.0)
     async def bird_spawner(self):
         wait_time = random.randint(60, 120)
         await asyncio.sleep(wait_time)
 
-        for guild_id, channel_id in list(self.bot.server_settings.items()):
+        server_settings = self.get_all_server_settings()
+
+        for guild_id, channel_id in list(server_settings.items()):
             try:
                 if guild_id not in self.bot.spawn_states:
                     self.bot.spawn_states[guild_id] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
@@ -95,9 +104,10 @@ class CoreCog(commands.Cog):
             return
 
         guild_id = str(message.guild.id) if message.guild else None
+        server_settings = self.get_all_server_settings()
         
-        if guild_id and guild_id in self.bot.server_settings:
-            if message.channel.id == self.bot.server_settings[guild_id]:
+        if guild_id and guild_id in server_settings:
+            if message.channel.id == server_settings[guild_id]:
                 if guild_id not in self.bot.spawn_states:
                     self.bot.spawn_states[guild_id] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
 
@@ -114,13 +124,26 @@ class CoreCog(commands.Cog):
                         self.bot.spawn_states[guild_id]["active"] = False
                         self.bot.spawn_states[guild_id]["name"] = None
                         
-                        if guild_id not in self.bot.server_inventories:
-                            self.bot.server_inventories[guild_id] = {}
-                        if user_id not in self.bot.server_inventories[guild_id]:
-                            self.bot.server_inventories[guild_id][user_id] = []
+                        # --- VERİTABANINDAN ENVANTERİ ÇEK VE GÜNCELLE ---
+                        cursor = self.bot.db_cursor
+                        conn = self.bot.db_conn
+                        
+                        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(guild_id), int(user_id)))
+                        row = cursor.fetchone()
+                        
+                        if row:
+                            user_birds = json.loads(row[0])
+                        else:
+                            user_birds = []
                             
-                        self.bot.server_inventories[guild_id][user_id].append(caught_bird)
-                        self.bot.save_json("inventory.json", self.bot.server_inventories)
+                        user_birds.append(caught_bird)
+                        
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
+                            VALUES (?, ?, ?)
+                        """, (int(guild_id), int(user_id), json.dumps(user_birds)))
+                        conn.commit()
+                        # -----------------------------------------------
 
                         # Başarım kontrolleri (sunucu ID'si ile)
                         games_cog = self.bot.get_cog("GamesCog")

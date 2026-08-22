@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+import json
 
 class EconomyCog(commands.Cog):
     def __init__(self, bot):
@@ -37,10 +38,14 @@ class EconomyCog(commands.Cog):
             await interaction.followup.send("❌ This command can only be used in a server!")
             return
 
-        guild_id = str(interaction.guild.id)
-        user_id = str(interaction.user.id)
-        guild_inv = self.bot.server_inventories.get(guild_id, {})
-        user_birds = guild_inv.get(user_id, [])
+        guild_id = interaction.guild.id
+        user_id = interaction.user.id
+        
+        cursor = self.bot.db_cursor
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+        row = cursor.fetchone()
+        
+        user_birds = json.loads(row[0]) if row else []
         
         if not user_birds:
             embed = discord.Embed(
@@ -72,10 +77,13 @@ class EconomyCog(commands.Cog):
             await interaction.followup.send("❌ This command can only be used in a server!")
             return
 
-        guild_id = str(interaction.guild.id)
-        guild_inv = self.bot.server_inventories.get(guild_id, {})
+        guild_id = interaction.guild.id
+        cursor = self.bot.db_cursor
         
-        if not guild_inv:
+        cursor.execute("SELECT user_id, birds FROM inventories WHERE guild_id = ?", (guild_id,))
+        rows = cursor.fetchall()
+        
+        if not rows:
             embed = discord.Embed(
                 title="🏆 Server Bird Value Leaderboard",
                 description="No birds have been caught in this server yet!",
@@ -85,7 +93,9 @@ class EconomyCog(commands.Cog):
             return
 
         user_totals = []
-        for user_id, birds in guild_inv.items():
+        for row in rows:
+            user_id = row[0]
+            birds = json.loads(row[1])
             total_value = self.get_inventory_value(birds)
             user_totals.append((user_id, total_value, len(birds)))
 

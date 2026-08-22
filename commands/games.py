@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import random
+import json
 
 class GamesCog(commands.Cog):
     def __init__(self, bot):
@@ -31,18 +32,26 @@ class GamesCog(commands.Cog):
         if not guild_id and channel and getattr(channel, "guild", None):
             guild_id = channel.guild.id
 
-        guild_id_str = str(guild_id) if guild_id else "global"
-        user_id_str = str(user_id)
+        guild_id_val = guild_id if guild_id else "global"
+        user_id_val = int(user_id)
+        guild_id_db = int(guild_id) if guild_id else 0
 
-        if guild_id_str not in self.bot.achievements_data:
-            self.bot.achievements_data[guild_id_str] = {}
+        cursor = self.bot.db_cursor
+        conn = self.bot.db_conn
 
-        if user_id_str not in self.bot.achievements_data[guild_id_str]:
-            self.bot.achievements_data[guild_id_str][user_id_str] = []
+        # Veritabanından kullanıcının başarımlarını çek
+        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = ? AND user_id = ?", (guild_id_db, user_id_val))
+        row = cursor.fetchone()
+        
+        user_achievements = json.loads(row[0]) if row else []
 
-        if ach_id not in self.bot.achievements_data[guild_id_str][user_id_str]:
-            self.bot.achievements_data[guild_id_str][user_id_str].append(ach_id)
-            self.bot.save_json("achievements.json", self.bot.achievements_data)
+        if ach_id not in user_achievements:
+            user_achievements.append(ach_id)
+            cursor.execute("""
+                INSERT OR REPLACE INTO achievements (guild_id, user_id, achievements) 
+                VALUES (?, ?, ?)
+            """, (guild_id_db, user_id_val, json.dumps(user_achievements)))
+            conn.commit()
 
             ach_info = self.ACHIEVEMENTS_LIST.get(ach_id)
             if ach_info and channel:
@@ -60,14 +69,12 @@ class GamesCog(commands.Cog):
         if not guild_id:
             return
 
-        user_id_str = str(user_id)
-        guild_id_str = str(guild_id)
-
-        total_birds = 0
-        user_birds = []
-        if guild_id_str in self.bot.server_inventories:
-            user_birds = self.bot.server_inventories[guild_id_str].get(user_id_str, [])
-            total_birds = len(user_birds)
+        cursor = self.bot.db_cursor
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(guild_id), int(user_id)))
+        row = cursor.fetchone()
+        
+        user_birds = json.loads(row[0]) if row else []
+        total_birds = len(user_birds)
 
         if total_birds >= 1:
             self.bot.loop.create_task(self.unlock_achievement(user_id, "it_begins", channel, guild_id=guild_id))
@@ -128,13 +135,18 @@ class GamesCog(commands.Cog):
             )
             return
 
-        guild_id = str(interaction.guild.id) if interaction.guild else None
+        guild_id = interaction.guild.id if interaction.guild else None
         target_channel = interaction.channel
 
-        if guild_id and guild_id in self.bot.server_settings:
-            ch = self.bot.get_channel(self.bot.server_settings[guild_id])
-            if ch:
-                target_channel = ch
+        # Sunucu ayarlarından özel kanalı çekme
+        if guild_id:
+            cursor = self.bot.db_cursor
+            cursor.execute("SELECT channel_id FROM guild_settings WHERE guild_id = ?", (guild_id,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                ch = self.bot.get_channel(row[0])
+                if ch:
+                    target_channel = ch
 
         sticker = None
         try:
@@ -165,13 +177,17 @@ class GamesCog(commands.Cog):
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
 
-        user_id = str(interaction.user.id)
-        guild_id = str(interaction.guild.id)
+        user_id = interaction.user.id
+        guild_id = interaction.guild.id
 
-        if guild_id not in self.bot.pip_claims:
-            self.bot.pip_claims[guild_id] = {}
+        cursor = self.bot.db_cursor
+        conn = self.bot.db_conn
 
-        if self.bot.pip_claims[guild_id].get(user_id, False):
+        cursor.execute("SELECT claimed FROM pip_claims WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+        row = cursor.fetchone()
+        already_claimed = bool(row[0]) if row else False
+
+        if already_claimed:
             await self.unlock_achievement(interaction.user.id, "not_again", interaction.channel, guild_id=interaction.guild.id)
             await self.unlock_achievement(interaction.user.id, "pip", interaction.channel, guild_id=interaction.guild.id)
             
@@ -183,17 +199,24 @@ class GamesCog(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
-        if guild_id not in self.bot.server_inventories:
-            self.bot.server_inventories[guild_id] = {}
-            
-        if user_id not in self.bot.server_inventories[guild_id]:
-            self.bot.server_inventories[guild_id][user_id] = []
+        # Envantere 2x Good Bird ekle
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+        inv_row = cursor.fetchone()
+        user_birds = json.loads(inv_row[0]) if inv_row else []
+        
+        user_birds.extend(["Good Bird", "Good Bird"])
 
-        self.bot.server_inventories[guild_id][user_id].extend(["Good Bird", "Good Bird"])
-        self.bot.save_json("inventory.json", self.bot.server_inventories)
+        cursor.execute("""
+            INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
+            VALUES (?, ?, ?)
+        """, (guild_id, user_id, json.dumps(user_birds)))
 
-        self.bot.pip_claims[guild_id][user_id] = True
-        self.bot.save_json("pip_claims.json", self.bot.pip_claims)
+        # Pip claim kaydet
+        cursor.execute("""
+            INSERT OR REPLACE INTO pip_claims (guild_id, user_id, claimed) 
+            VALUES (?, ?, 1)
+        """, (guild_id, user_id))
+        conn.commit()
 
         await self.unlock_achievement(interaction.user.id, "pip", interaction.channel, guild_id=interaction.guild.id)
         self.check_stat_achievements(interaction.user.id, interaction.guild.id, interaction.channel)
@@ -252,13 +275,15 @@ class GamesCog(commands.Cog):
                 await interaction.followup.send(f"❌ Bird '{bird_name}' not found!", ephemeral=True)
                 return
 
-            guild_id = str(interaction.guild.id)
-            user_id = str(interaction.user.id)
+            guild_id = interaction.guild.id
+            user_id = interaction.user.id
 
-            if guild_id not in self.bot.server_inventories:
-                self.bot.server_inventories[guild_id] = {}
-            
-            user_birds = self.bot.server_inventories[guild_id].get(user_id, [])
+            cursor = self.bot.db_cursor
+            conn = self.bot.db_conn
+
+            cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+            row = cursor.fetchone()
+            user_birds = json.loads(row[0]) if row else []
 
             current_count = user_birds.count(matched_bird_name)
             if current_count < number:
@@ -270,7 +295,13 @@ class GamesCog(commands.Cog):
             if won:
                 for _ in range(number):
                     user_birds.append(matched_bird_name)
-                self.bot.save_json("inventory.json", self.bot.server_inventories)
+                
+                cursor.execute("""
+                    INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
+                    VALUES (?, ?, ?)
+                """, (guild_id, user_id, json.dumps(user_birds)))
+                conn.commit()
+
                 self.check_stat_achievements(interaction.user.id, interaction.guild.id, interaction.channel)
 
                 embed = discord.Embed(
@@ -282,7 +313,12 @@ class GamesCog(commands.Cog):
             else:
                 for _ in range(number):
                     user_birds.remove(matched_bird_name)
-                self.bot.save_json("inventory.json", self.bot.server_inventories)
+                
+                cursor.execute("""
+                    INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
+                    VALUES (?, ?, ?)
+                """, (guild_id, user_id, json.dumps(user_birds)))
+                conn.commit()
 
                 embed = discord.Embed(
                     title="🎰 Gamble Lost!",
@@ -327,14 +363,17 @@ class GamesCog(commands.Cog):
                 return
 
             matched_bird_name = matched_bird["name"]
-            guild_id = str(interaction.guild.id)
-            sender_id = str(interaction.user.id)
-            receiver_id = str(member.id)
+            guild_id = interaction.guild.id
+            sender_id = interaction.user.id
+            receiver_id = member.id
 
-            if guild_id not in self.bot.server_inventories:
-                self.bot.server_inventories[guild_id] = {}
+            cursor = self.bot.db_cursor
+            conn = self.bot.db_conn
 
-            sender_birds = self.bot.server_inventories[guild_id].get(sender_id, [])
+            # Gönderen envanteri
+            cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, sender_id))
+            sender_row = cursor.fetchone()
+            sender_birds = json.loads(sender_row[0]) if sender_row else []
 
             current_count = sender_birds.count(matched_bird_name)
             if current_count < number:
@@ -344,13 +383,25 @@ class GamesCog(commands.Cog):
             for _ in range(number):
                 sender_birds.remove(matched_bird_name)
 
-            if receiver_id not in self.bot.server_inventories[guild_id]:
-                self.bot.server_inventories[guild_id][receiver_id] = []
-            
-            for _ in range(number):
-                self.bot.server_inventories[guild_id][receiver_id].append(matched_bird_name)
+            cursor.execute("""
+                INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
+                VALUES (?, ?, ?)
+            """, (guild_id, sender_id, json.dumps(sender_birds)))
 
-            self.bot.save_json("inventory.json", self.bot.server_inventories)
+            # Alıcı envanteri
+            cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, receiver_id))
+            receiver_row = cursor.fetchone()
+            receiver_birds = json.loads(receiver_row[0]) if receiver_row else []
+
+            for _ in range(number):
+                receiver_birds.append(matched_bird_name)
+
+            cursor.execute("""
+                INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
+                VALUES (?, ?, ?)
+            """, (guild_id, receiver_id, json.dumps(receiver_birds)))
+            conn.commit()
+
             self.check_stat_achievements(member.id, interaction.guild.id, interaction.channel)
 
             bird_value = matched_bird.get("value", 0)

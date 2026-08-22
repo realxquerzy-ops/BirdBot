@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+import json
 
 class GlobalCog(commands.Cog):
     def __init__(self, bot):
@@ -23,21 +24,32 @@ class GlobalCog(commands.Cog):
     async def global_leaderboard(self, interaction: discord.Interaction, filter_by: str = "value", server_id: str = None):
         await interaction.response.defer(ephemeral=False)
         try:
-            inventories = getattr(self.bot, "server_inventories", {})
-            fastest_times = getattr(self.bot, "fastest_times", {}) # <-- EKLENDİ: Süreler buradan okunuyor
+            cursor = self.bot.db_cursor
+            fastest_times = getattr(self.bot, "fastest_times", {})
             
-            if not inventories:
-                await interaction.followup.send("❌ No inventory data found yet!", ephemeral=True)
-                return
-
+            # Kuş değerleri sözlüğünü oluştur
             bird_values = {}
             for bird in self.bot.birds:
                 bird_values[bird["name"].lower()] = bird.get("value", 0)
 
             # --- SUNUCU BAZLI FİLTRELER ---
             if filter_by in ["server_value", "server_count", "server_fastest_time"]:
+                cursor.execute("SELECT guild_id, user_id, birds FROM inventories")
+                rows = cursor.fetchall()
+                
+                if not rows:
+                    await interaction.followup.send("❌ No inventory data found yet!", ephemeral=True)
+                    return
+
+                server_inventories_map = {}
+                for row in rows:
+                    g_id, u_id, birds_json = str(row[0]), str(row[1]), row[2]
+                    if g_id not in server_inventories_map:
+                        server_inventories_map[g_id] = {}
+                    server_inventories_map[g_id][u_id] = json.loads(birds_json)
+
                 server_stats = {}
-                for g_id, users_dict in inventories.items():
+                for g_id, users_dict in server_inventories_map.items():
                     try:
                         guild_obj = self.bot.get_guild(int(g_id))
                         g_name = guild_obj.name if guild_obj else f"Server ({g_id})"
@@ -53,7 +65,6 @@ class GlobalCog(commands.Cog):
                         for b_name in birds_list:
                             total_v += bird_values.get(b_name.lower(), 0)
                         
-                        # Sunucudaki en iyi süreyi bul
                         if u_id in fastest_times and fastest_times[u_id] < server_best_time:
                             server_best_time = fastest_times[u_id]
                     
@@ -83,21 +94,26 @@ class GlobalCog(commands.Cog):
                 return
 
             # --- OYUNCU BAZLI FİLTRELER ---
-            user_stats = {}
-            target_guilds = [server_id] if server_id else inventories.keys()
+            if server_id:
+                cursor.execute("SELECT user_id, birds FROM inventories WHERE guild_id = ?", (int(server_id),))
+            else:
+                cursor.execute("SELECT user_id, birds FROM inventories")
+            
+            rows = cursor.fetchall()
+            if not rows:
+                await interaction.followup.send("❌ No inventory data found yet!", ephemeral=True)
+                return
 
-            for g_id in target_guilds:
-                if g_id not in inventories:
-                    continue
-                for u_id, birds_list in inventories[g_id].items():
-                    if u_id not in user_stats:
-                        # Kullanıcının en hızlı süresini bot hafızasından alıyoruz (yoksa 0.0)
-                        user_best = fastest_times.get(u_id, 0.0)
-                        user_stats[u_id] = {"value": 0, "count": 0, "fastest_time": user_best}
-                    
-                    user_stats[u_id]["count"] += len(birds_list)
-                    for b_name in birds_list:
-                        user_stats[u_id]["value"] += bird_values.get(b_name.lower(), 0)
+            user_stats = {}
+            for row in rows:
+                u_id, birds_list = str(row[0]), json.loads(row[1])
+                if u_id not in user_stats:
+                    user_best = fastest_times.get(u_id, 0.0)
+                    user_stats[u_id] = {"value": 0, "count": 0, "fastest_time": user_best}
+                
+                user_stats[u_id]["count"] += len(birds_list)
+                for b_name in birds_list:
+                    user_stats[u_id]["value"] += bird_values.get(b_name.lower(), 0)
 
             if not user_stats:
                 await interaction.followup.send("❌ No data found for this filter/scope!", ephemeral=True)
@@ -111,7 +127,6 @@ class GlobalCog(commands.Cog):
                 is_reverse = True
             else:  # fastest_time
                 sort_key = "fastest_time"
-                # Süresi olmayanları listeden eleyelim ki 0.0s gözükmesin
                 user_stats = {k: v for k, v in user_stats.items() if v["fastest_time"] > 0}
                 if not user_stats:
                     await interaction.followup.send("❌ No fastest time data available yet!", ephemeral=True)
