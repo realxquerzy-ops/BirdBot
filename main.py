@@ -3,10 +3,6 @@ import discord
 from discord.ext import commands
 import os
 import json
-from dotenv import load_dotenv
-
-# Railway veya lokal ortamdaki değişkenleri okumak için
-load_dotenv()
 
 # Veritabanını bağla (dosya yoksa otomatik oluşturur)
 conn = sqlite3.connect('bot_data.db', check_same_thread=False)
@@ -95,9 +91,9 @@ bot.save_json = save_json
 bot.db_conn = conn
 bot.db_cursor = cursor
 
-# Token'ı güvenli bir şekilde Railway Variables'tan çekiyoruz
+# Token'ı doğrudan Railway ortam değişkeninden alıyoruz
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
-    print("❌ HATA: DISCORD_TOKEN bulunamadı! Lütfen Railway Variables kısmına veya .env dosyasına ekleyin.")
+    print("❌ HATA: DISCORD_TOKEN bulunamadı! Lütfen Railway Variables kısmına ekleyin.")
 else:
     bot.run(TOKEN)
