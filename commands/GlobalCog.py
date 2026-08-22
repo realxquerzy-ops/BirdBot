@@ -93,9 +93,9 @@ class GlobalCog(commands.Cog):
                 await interaction.followup.send(embed=embed)
                 return
 
-            # --- OYUNCU BAZLI FİLTRELER ---
+            # --- OYUNCU BAZLI FİLTRELER (PostgreSQL %s parametresi ile) ---
             if server_id:
-                cursor.execute("SELECT user_id, birds FROM inventories WHERE guild_id = ?", (int(server_id),))
+                cursor.execute("SELECT user_id, birds FROM inventories WHERE guild_id = %s", (int(server_id),))
             else:
                 cursor.execute("SELECT user_id, birds FROM inventories")
             

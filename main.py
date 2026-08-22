@@ -1,43 +1,58 @@
-import sqlite3
-import discord
-from discord.ext import commands
 import os
 import json
+import discord
+from discord.ext import commands
+import psycopg2
+from urllib.parse import urlparse
 
-# --- VERİTABANI BAĞLANTISI ---
-conn = sqlite3.connect('bot_data.db', check_same_thread=False)
+# --- VERİTABANI BAĞLANTISI (PostgreSQL) ---
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    print("❌ HATA: DATABASE_URL bulunamadı! Lütfen Railway PostgreSQL değişkenini ekleyin.")
+    exit(1)
+
+# Railway URL'sini parse edip psycopg2 ile bağlanıyoruz
+url = urlparse(DATABASE_URL)
+conn = psycopg2.connect(
+    database=url.path[1:],
+    user=url.username,
+    password=url.password,
+    host=url.hostname,
+    port=url.port
+)
 cursor = conn.cursor()
 
 # Tabloları Tertemiz Sıfırdan Oluşturuyoruz
 cursor.execute('''CREATE TABLE IF NOT EXISTS inventories (
-    guild_id INTEGER,
-    user_id INTEGER,
+    guild_id BIGINT,
+    user_id BIGINT,
     birds TEXT,
     PRIMARY KEY (guild_id, user_id)
 )''')
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS guild_settings (
-    guild_id INTEGER PRIMARY KEY,
-    channel_id INTEGER
+    guild_id BIGINT PRIMARY KEY,
+    channel_id BIGINT
 )''')
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS pip_claims (
-    guild_id INTEGER,
-    user_id INTEGER,
+    guild_id BIGINT,
+    user_id BIGINT,
     claimed BOOLEAN,
     PRIMARY KEY (guild_id, user_id)
 )''')
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS achievements (
-    guild_id INTEGER,
-    user_id INTEGER,
+    guild_id BIGINT,
+    user_id BIGINT,
     achievements TEXT,
     PRIMARY KEY (guild_id, user_id)
 )''')
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS birds_data (
     name TEXT PRIMARY KEY,
-    sticker_id INTEGER,
+    sticker_id BIGINT,
     weight REAL,
     value REAL
 )''')
@@ -61,7 +76,13 @@ default_birds = [
     ("Bird 618", 1540321587780124693, 0.2, 35.0),
     ("Radioactive Bird", 1540372078660952175, 0.1, 50)
 ]
-cursor.executemany("INSERT OR IGNORE INTO birds_data (name, sticker_id, weight, value) VALUES (?, ?, ?, ?)", default_birds)
+
+for bird in default_birds:
+    cursor.execute("""
+        INSERT INTO birds_data (name, sticker_id, weight, value) 
+        VALUES (%s, %s, %s, %s) 
+        ON CONFLICT (name) DO NOTHING
+    """, bird)
 conn.commit()
 
 # --- GLOBAL VERİLER VE YARDIMCI FONKSİYONLAR ---
@@ -84,7 +105,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user} olarak giriş yapıldı!")
+    print(f"{bot.user} olarak giriş yapıldı ve PostgreSQL aktif!")
     
     if os.path.exists("./commands"):
         for filename in os.listdir("./commands"):

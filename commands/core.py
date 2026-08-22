@@ -124,11 +124,11 @@ class CoreCog(commands.Cog):
                         self.bot.spawn_states[guild_id]["active"] = False
                         self.bot.spawn_states[guild_id]["name"] = None
                         
-                        # --- VERİTABANINDAN ENVANTERİ ÇEK VE GÜNCELLE ---
+                        # --- VERİTABANINDAN ENVANTERİ ÇEK VE GÜNCELLE (PostgreSQL Uyumlu) ---
                         cursor = self.bot.db_cursor
                         conn = self.bot.db_conn
                         
-                        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(guild_id), int(user_id)))
+                        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (int(guild_id), int(user_id)))
                         row = cursor.fetchone()
                         
                         if row:
@@ -138,12 +138,15 @@ class CoreCog(commands.Cog):
                             
                         user_birds.append(caught_bird)
                         
+                        # PostgreSQL ON CONFLICT (UPSERT) yapısı
                         cursor.execute("""
-                            INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
-                            VALUES (?, ?, ?)
+                            INSERT INTO inventories (guild_id, user_id, birds) 
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT (guild_id, user_id) 
+                            DO UPDATE SET birds = EXCLUDED.birds
                         """, (int(guild_id), int(user_id), json.dumps(user_birds)))
                         conn.commit()
-                        # -----------------------------------------------
+                        # -----------------------------------------------------------------
 
                         # Başarım kontrolleri (sunucu ID'si ile)
                         games_cog = self.bot.get_cog("GamesCog")

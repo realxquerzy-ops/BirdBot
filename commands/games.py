@@ -14,36 +14,36 @@ class GamesCog(commands.Cog):
         "is_a_bird": {"name": "IS a bird", "desc": "Catch 100 birds", "hidden": False},
         "a_trade": {"name": "A Trade", "desc": "Complete your first trade", "hidden": False},
         "too_fast": {"name": "Too fast", "desc": "Catch a bird in under 3 seconds", "hidden": False},
-        "pip": {"name": "Pip?", "desc": "???", "hidden": False},
-        "just_why": {"name": "Just why?", "desc": "DM the BirdBot 'no pip'", "hidden": False},
-        "perfect": {"name": "Perfect", "desc": "Catch a bird in exactly 1 second (?.00s)", "hidden": False},
-        "scammer": {"name": "Scammer", "desc": "Scam someone in a trade", "hidden": False},
-        "scammed": {"name": "Scammed", "desc": "Get scammed in a trade", "hidden": False},
-        "not_again": {"name": "Not again bud", "desc": "Try to use the /pip command a second time", "hidden": False},
+        "pip": {"name": "Pip?", "desc": "???", "hidden": True},
+        "just_why": {"name": "Just why?", "desc": "DM the BirdBot 'no pip'", "hidden": True},
+        "perfect": {"name": "Perfect", "desc": "Catch a bird in exactly 1 second (?.00s)", "hidden": True},
+        "scammer": {"name": "Scammer", "desc": "Scam someone in a trade", "hidden": True},
+        "scammed": {"name": "Scammed", "desc": "Get scammed in a trade", "hidden": True},
+        "not_again": {"name": "Not again bud", "desc": "Try to use the /pip command a second time", "hidden": True},
         "top_1": {"name": "Top 1", "desc": "Be top 1 in the leaderboards", "hidden": False},
-        "milk": {"name": "milk", "desc": "???", "hidden": False},
+        "milk": {"name": "milk", "desc": "???", "hidden": True},
         "luck": {"name": "Luck", "desc": "Catch the exact same bird 3 times in a row", "hidden": False},
         "rich_bird": {"name": "Rich Bird", "desc": "Have an inventory value of 50+ points with fewer than 10 birds", "hidden": False},
-        "giveaway": {"name": "Giveaway", "desc": "Give away a valuable bird for free in a trade", "hidden": False},
-        "a_real_bird": {"name": "A Real Bird", "desc": "Get 100% on the /birdrate command", "hidden": False},
-        "rarest": {"name": "Rarest", "desc": "Catch the rarest bird", "hidden": False},
+        "giveaway": {"name": "Giveaway", "desc": "Give away a valuable bird for free in a trade", "hidden": True},
+        "a_real_bird": {"name": "A Real Bird", "desc": "Get 100% on the /birdrate command", "hidden": True},
+        "rarest": {"name": "Rarest", "desc": "Catch the rarest bird", "hidden": True},
 
         # Yeni Eklenen Başarımlar
         "lets_go_gambling": {"name": "Let's go gambling!", "desc": "Gamble for the very first time", "hidden": False},
-        "aww_dang_it": {"name": "Aw dang it!", "desc": "Lose your first gamble", "hidden": False},
-        "skill_issue": {"name": "Skill Issue", "desc": "???", "hidden": False},
-        "why_ping": {"name": "Why ping?", "desc": "Mention / ping the BirdBot", "hidden": False},
-        "mispell_bird": {"name": "Mispell Bird", "desc": "Type 'brd' or misspell bird while trying to catch", "hidden": False},
-        "triple_loss": {"name": "Unlucky Streak", "desc": "Lose 3 times in a row while gambling", "hidden": False},
-        "big_bet": {"name": "Big Bet", "desc": "Gamble your absolute rarest bird", "hidden": False},
-        "generous_rare": {"name": "Too Generous", "desc": "Gift the rarest bird in the game using /gift", "hidden": False},
+        "aww_dang_it": {"name": "Aw dang it!", "desc": "Lose your first gamble", "hidden": True},
+        "skill_issue": {"name": "Skill Issue", "desc": "???", "hidden": True},
+        "why_ping": {"name": "Why ping?", "desc": "Mention / ping the BirdBot", "hidden": True},
+        "mispell_bird": {"name": "Mispell Bird", "desc": "Type 'brd' or misspell bird while trying to catch", "hidden": True},
+        "triple_loss": {"name": "Unlucky Streak", "desc": "Lose 3 times in a row while gambling", "hidden": True},
+        "big_bet": {"name": "Big Bet", "desc": "Gamble your absolute rarest bird", "hidden": True},
+        "generous_rare": {"name": "Too Generous", "desc": "Gift the rarest bird in the game using /gift", "hidden": True},
         "nice_guy": {"name": "Nice Guy", "desc": "Gift a bird to a person who has 0 birds", "hidden": False},
-        "broke_gambler": {"name": "Broke Gambler", "desc": "Try to gamble a bird you don't even own", "hidden": False},
-        "oh_my_god": {"name": "OH MY GOD", "desc": "Gamble everything you have of a bird and win", "hidden": False},
-        "its_over": {"name": "It's over.", "desc": "Gamble everything you have of a bird and lose", "hidden": False},
+        "broke_gambler": {"name": "Broke Gambler", "desc": "Try to gamble a bird you don't even own", "hidden": True},
+        "oh_my_god": {"name": "OH MY GOD", "desc": "Gamble everything you have of a bird and win", "hidden": True},
+        "its_over": {"name": "It's over.", "desc": "Gamble everything you have of a bird and lose", "hidden": True},
         "collector": {"name": "Collector", "desc": "Have every type of bird in your inventory", "hidden": False},
-        "ultra_bird": {"name": "ULTRA BIRD", "desc": "Have every type of bird x5 in your inventory", "hidden": False},
-        "god_bird": {"name": "GOD BIRD", "desc": "Have every type of bird x25 in your inventory", "hidden": False}
+        "ultra_bird": {"name": "ULTRA BIRD", "desc": "Have every type of bird x5 in your inventory", "hidden": True},
+        "god_bird": {"name": "GOD BIRD", "desc": "Have every type of bird x25 in your inventory", "hidden": True}
     }
 
     async def unlock_achievement(self, user_id, ach_id, channel=None, guild_id=None):
@@ -152,9 +152,11 @@ class GamesCog(commands.Cog):
         description = ""
         for ach_id, info in self.ACHIEVEMENTS_LIST.items():
             if ach_id in user_achievements:
-                description += f"✅ **{info['name']}** - {info['desc']}\n"
+                description += f"✅ **{info['name']}** — *{info['desc']}*\n"
+            elif not info.get("hidden", False):
+                description += f"❌ **{info['name']}** — *{info['desc']}*\n"
             else:
-                description += f"🔒 *{info['name']}* - {info['desc']}\n"
+                description += f"❌ *???*\n"
 
         embed = discord.Embed(
             title=f"🏆 {interaction.user.name}'s Achievements",

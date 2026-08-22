@@ -42,7 +42,8 @@ class EconomyCog(commands.Cog):
         user_id = interaction.user.id
         
         cursor = self.bot.db_cursor
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+        # PostgreSQL uyumlu %s parametresi kullanıldı
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
         row = cursor.fetchone()
         
         user_birds = json.loads(row[0]) if row else []
@@ -80,7 +81,8 @@ class EconomyCog(commands.Cog):
         guild_id = interaction.guild.id
         cursor = self.bot.db_cursor
         
-        cursor.execute("SELECT user_id, birds FROM inventories WHERE guild_id = ?", (guild_id,))
+        # PostgreSQL uyumlu %s parametresi kullanıldı
+        cursor.execute("SELECT user_id, birds FROM inventories WHERE guild_id = %s", (guild_id,))
         rows = cursor.fetchall()
         
         if not rows:

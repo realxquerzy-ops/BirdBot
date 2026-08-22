@@ -80,11 +80,12 @@ class TradeConfirmView(discord.ui.View):
         }
 
         cursor = bot.db_cursor
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(guild_id), initiator.id))
+        # PostgreSQL uyumlu %s parametreleri kullanıldı
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (int(guild_id), initiator.id))
         init_row = cursor.fetchone()
         self.init_birds = json.loads(init_row[0]) if init_row else []
 
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(guild_id), target.id))
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (int(guild_id), target.id))
         target_row = cursor.fetchone()
         self.target_birds = json.loads(target_row[0]) if target_row else []
 
@@ -131,15 +132,18 @@ class TradeConfirmView(discord.ui.View):
         cursor = self.bot.db_cursor
         conn = self.bot.db_conn
 
-        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = ? AND user_id = ?", (guild_id_val, user_id_val))
+        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = %s AND user_id = %s", (guild_id_val, user_id_val))
         row = cursor.fetchone()
         user_achievements = json.loads(row[0]) if row and row[0] else []
 
         if ach_id not in user_achievements:
             user_achievements.append(ach_id)
+            # PostgreSQL upsert (ON CONFLICT) yapısına dönüştürüldü
             cursor.execute("""
-                INSERT OR REPLACE INTO achievements (guild_id, user_id, achievements) 
-                VALUES (?, ?, ?)
+                INSERT INTO achievements (guild_id, user_id, achievements) 
+                VALUES (%s, %s, %s)
+                ON CONFLICT (guild_id, user_id) 
+                DO UPDATE SET achievements = EXCLUDED.achievements
             """, (guild_id_val, user_id_val, json.dumps(user_achievements)))
             conn.commit()
 
@@ -179,11 +183,11 @@ class TradeConfirmView(discord.ui.View):
         cursor = self.bot.db_cursor
         conn = self.bot.db_conn
 
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id_int, init_id))
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id_int, init_id))
         init_row = cursor.fetchone()
         init_user_birds = json.loads(init_row[0]) if init_row and init_row[0] else []
 
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id_int, target_id))
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id_int, target_id))
         target_row = cursor.fetchone()
         target_user_birds = json.loads(target_row[0]) if target_row and target_row[0] else []
 
@@ -211,8 +215,9 @@ class TradeConfirmView(discord.ui.View):
                 target_user_birds.remove(bird)
                 init_user_birds.append(bird)
 
-        cursor.execute("INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) VALUES (?, ?, ?)", (guild_id_int, init_id, json.dumps(init_user_birds)))
-        cursor.execute("INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) VALUES (?, ?, ?)", (guild_id_int, target_id, json.dumps(target_user_birds)))
+        # PostgreSQL upsert (ON CONFLICT) yapısına dönüştürüldü
+        cursor.execute("INSERT INTO inventories (guild_id, user_id, birds) VALUES (%s, %s, %s) ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds", (guild_id_int, init_id, json.dumps(init_user_birds)))
+        cursor.execute("INSERT INTO inventories (guild_id, user_id, birds) VALUES (%s, %s, %s) ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds", (guild_id_int, target_id, json.dumps(target_user_birds)))
         conn.commit()
 
         await self.unlock_achievement(self.initiator.id, "a_trade", interaction.channel)
@@ -264,7 +269,7 @@ class TradeRequestView(discord.ui.View):
             return
         
         cursor = self.bot.db_cursor
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(self.guild_id), self.target.id))
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (int(self.guild_id), self.target.id))
         row = cursor.fetchone()
         target_birds = json.loads(row[0]) if row and row[0] else []
 
@@ -307,7 +312,7 @@ class SocialCog(commands.Cog):
 
         guild_id = interaction.guild.id
         cursor = self.bot.db_cursor
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, interaction.user.id))
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, interaction.user.id))
         row = cursor.fetchone()
         user_birds = json.loads(row[0]) if row and row[0] else []
         
@@ -370,7 +375,8 @@ class SocialCog(commands.Cog):
         cursor = self.bot.db_cursor
         conn = self.bot.db_conn
 
-        cursor.execute("INSERT OR REPLACE INTO guild_settings (guild_id, channel_id) VALUES (?, ?)", (guild_id, channel.id))
+        # PostgreSQL upsert (ON CONFLICT) yapısına dönüştürüldü
+        cursor.execute("INSERT INTO guild_settings (guild_id, channel_id) VALUES (%s, %s) ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id", (guild_id, channel.id))
         conn.commit()
         
         if hasattr(self.bot, "spawn_states"):
