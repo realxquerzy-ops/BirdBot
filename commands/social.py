@@ -28,7 +28,6 @@ class MultiQuantityModal(discord.ui.Modal):
             return
 
         bird_name = self.select_item.selected_bird_temp
-        # Seçilen kuş ve miktarı kullanıcının teklif listesine ekle/güncelle
         self.view_instance.add_offer(self.select_item.owner_id, bird_name, val)
         
         if hasattr(self.view_instance, "confirmed_users"):
@@ -75,7 +74,6 @@ class TradeConfirmView(discord.ui.View):
         self.guild_id = guild_id
         self.confirmed_users = set()
 
-        # Teklifler sözlüğü: {user_id: {bird_name: count, ...}}
         self.offers = {
             initiator.id: {},
             target.id: {}
@@ -145,9 +143,9 @@ class TradeConfirmView(discord.ui.View):
             """, (guild_id_val, user_id_val, json.dumps(user_achievements)))
             conn.commit()
 
-            social_cog = self.bot.get_cog("SocialCog")
-            if social_cog and channel:
-                ach_info = social_cog.ACHIEVEMENTS_LIST.get(ach_id)
+            games_cog = self.bot.get_cog("GamesCog")
+            if games_cog and channel and hasattr(games_cog, "ACHIEVEMENTS_LIST"):
+                ach_info = games_cog.ACHIEVEMENTS_LIST.get(ach_id)
                 if ach_info:
                     try:
                         embed = discord.Embed(
@@ -190,7 +188,6 @@ class TradeConfirmView(discord.ui.View):
         target_row = cursor.fetchone()
         target_user_birds = json.loads(target_row[0]) if target_row else []
 
-        # Envanter yeterlilik kontrolü
         can_trade = True
         for bird, count in self.offers[init_id].items():
             if init_user_birds.count(bird) < count:
@@ -205,7 +202,6 @@ class TradeConfirmView(discord.ui.View):
             await interaction.response.send_message("❌ Trade failed! One of the users no longer has enough of the selected birds.", ephemeral=True)
             return
 
-        # Takas işlemini gerçekleştir
         for bird, count in self.offers[init_id].items():
             for _ in range(count):
                 init_user_birds.remove(bird)
@@ -223,7 +219,6 @@ class TradeConfirmView(discord.ui.View):
         await self.unlock_achievement(self.initiator.id, "a_trade", interaction.channel)
         await self.unlock_achievement(self.target.id, "a_trade", interaction.channel)
 
-        # Değer hesaplamaları ve başarımlar
         bird_values = {b["name"].lower(): b.get("value", 1) for b in self.bot.birds}
         
         init_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[init_id].items())
@@ -298,27 +293,6 @@ class SocialCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    ACHIEVEMENTS_LIST = {
-        "it_begins": {"name": "It begins...", "desc": "Catch your first bird", "hidden": False},
-        "likes_birds": {"name": "Likes Birds", "desc": "Catch 10 birds", "hidden": False},
-        "is_a_bird": {"name": "IS a bird", "desc": "Catch 100 birds", "hidden": False},
-        "a_trade": {"name": "A Trade", "desc": "Complete your first trade", "hidden": False},
-        "too_fast": {"name": "Too fast", "desc": "Catch a bird in under 3 seconds", "hidden": False},
-        "pip": {"name": "Pip?", "desc": "???", "hidden": True},
-        "just_why": {"name": "Just why?", "desc": "DM the BirdBot 'no pip'", "hidden": True},
-        "perfect": {"name": "Perfect", "desc": "Catch a bird in exactly 1 second", "hidden": True},
-        "scammer": {"name": "Scammer", "desc": "Scam someone in a trade", "hidden": True},
-        "scammed": {"name": "Scammed", "desc": "Get scammed in a trade", "hidden": True},
-        "not_again": {"name": "Not again bud", "desc": "Try to use the /pip command a second time", "hidden": True},
-        "top_1": {"name": "Top 1", "desc": "Be top 1 in the leaderboards", "hidden": False},
-        "milk": {"name": "milk", "desc": "???", "hidden": True},
-        "luck": {"name": "Luck", "desc": "Catch the exact same bird 3 times in a row", "hidden": False},
-        "rich_bird": {"name": "Rich Bird", "desc": "Have an inventory value of 50+ points with fewer than 10 birds", "hidden": False},
-        "giveaway": {"name": "Giveaway", "desc": "Give away a valuable bird for free in a trade", "hidden": True},
-        "a_real_bird": {"name": "A Real Bird", "desc": "Get 100% on the /birdrate command", "hidden": True},
-        "rarest": {"name": "Rarest", "desc": "Catch the rarest bird 2 times in a row", "hidden": True}
-    }
-
     @discord.app_commands.command(name="trade", description="Trade birds with another user in this server")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
@@ -344,42 +318,6 @@ class SocialCog(commands.Cog):
 
         view = TradeRequestView(self.bot, interaction.user, member, str(guild_id))
         await interaction.followup.send(content=f"🤝 {member.mention}, you have received a trade request from **{interaction.user.name}**!", view=view)
-
-    @discord.app_commands.command(name="achievements", description="View your or another user's unlocked achievements")
-    @discord.app_commands.allowed_installs(guilds=True, users=True)
-    @discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def achievements(self, interaction: discord.Interaction, member: discord.User = None):
-        await interaction.response.defer()
-        target_user = member or interaction.user
-        target_id = target_user.id
-        
-        cursor = self.bot.db_cursor
-        cursor.execute("SELECT achievements FROM achievements WHERE user_id = ?", (target_id,))
-        rows = cursor.fetchall()
-        
-        user_ach = []
-        for r in rows:
-            ach_list = json.loads(r[0])
-            for a in ach_list:
-                if a not in user_ach:
-                    user_ach.append(a)
-        
-        desc = ""
-        for ach_id, info in self.ACHIEVEMENTS_LIST.items():
-            unlocked = ach_id in user_ach
-            status = "✅" if unlocked else "❌"
-            if info["hidden"] and not unlocked:
-                desc += f"{status} **{info['name']}** — `???`\n"
-            else:
-                desc += f"{status} **{info['name']}** — {info['desc']}\n"
-
-        embed = discord.Embed(
-            title=f"🏆 {target_user.name}'s Achievements",
-            description=desc,
-            color=discord.Color.gold()
-        )
-        embed.set_footer(text=f"Unlocked: {len(user_ach)} / {len(self.ACHIEVEMENTS_LIST)}")
-        await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="dm", description="Sends you a direct message")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
