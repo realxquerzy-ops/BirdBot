@@ -92,7 +92,6 @@ class GamesCog(commands.Cog):
         user_birds = json.loads(row[0]) if row and row[0] else []
         total_birds = len(user_birds)
 
-        # Envanter dictionary (isim: adet) veya liste formatında olabileceği durumlara karşı uyumluluk
         if isinstance(user_birds, list):
             inv_dict = {b: user_birds.count(b) for b in set(user_birds)}
         else:
@@ -107,7 +106,6 @@ class GamesCog(commands.Cog):
         if total_birds >= 100:
             self.bot.loop.create_task(self.unlock_achievement(user_id, "is_a_bird", channel, guild_id=guild_id))
 
-        # Koleksiyon Kontrolleri
         if self.bot.birds:
             all_bird_names = [b["name"] for b in self.bot.birds]
             has_all = all(inv_dict.get(name, 0) >= 1 for name in all_bird_names)
@@ -138,6 +136,36 @@ class GamesCog(commands.Cog):
                 if rarest_bird["name"].lower() == caught_bird_name.lower():
                     self.bot.loop.create_task(self.unlock_achievement(user_id, "rarest", channel, guild_id=guild_id))
 
+    # --- Başarımları Görüntüleme Komutu Eklendi ---
+    @discord.app_commands.command(name="achievements", description="View your unlocked achievements")
+    @discord.app_commands.allowed_installs(guilds=True, users=True)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    async def achievements_command(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id if interaction.guild else 0
+        user_id = interaction.user.id
+
+        cursor = self.bot.db_cursor
+        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+        row = cursor.fetchone()
+        user_achievements = json.loads(row[0]) if row and row[0] else []
+
+        description = ""
+        for ach_id, info in self.ACHIEVEMENTS_LIST.items():
+            if ach_id in user_achievements:
+                description += f"✅ **{info['name']}** - {info['desc']}\n"
+            elif not info.get("hidden", False):
+                description += f"🔒 *{info['name']}* - {info['desc']}\n"
+            else:
+                description += f"🔒 *???[Secret]*\n"
+
+        embed = discord.Embed(
+            title=f"🏆 {interaction.user.name}'s Achievements",
+            description=description or "No achievements unlocked yet!",
+            color=discord.Color.gold()
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
@@ -152,7 +180,6 @@ class GamesCog(commands.Cog):
                 guild_id=message.guild.id if message.guild else None
             )
 
-        # Why ping achievement tetikleyicisi
         if self.bot.user in message.mentions:
             await self.unlock_achievement(
                 message.author.id,
@@ -345,10 +372,8 @@ class GamesCog(commands.Cog):
                 await interaction.followup.send(f"❌ Invalid amount! You have `{current_count}` of this bird.", ephemeral=True)
                 return
 
-            # İlk gamble başarımı
             await self.unlock_achievement(user_id, "lets_go_gambling", interaction.channel, guild_id)
 
-            # En nadir kuşu tam miktar basma (Big Bet)
             valid_birds = [b for b in self.bot.birds if "weight" in b]
             if valid_birds:
                 rarest_bird = min(valid_birds, key=lambda x: float(x["weight"]))
@@ -446,7 +471,6 @@ class GamesCog(commands.Cog):
             receiver_row = cursor.fetchone()
             receiver_birds = json.loads(receiver_row[0]) if receiver_row and receiver_row[0] else []
 
-            # Nice Guy Kontrolü (0 kuşu olan kişiye hediye)
             if len(receiver_birds) == 0:
                 await self.unlock_achievement(sender_id, "nice_guy", interaction.channel, guild_id)
 
@@ -482,7 +506,6 @@ class GamesCog(commands.Cog):
             if bird_value > 13:
                 await self.unlock_achievement(interaction.user.id, "giveaway", interaction.channel, guild_id=interaction.guild.id)
 
-            # En nadir kuşu hediye etme (generous_rare)
             valid_birds = [b for b in self.bot.birds if "weight" in b]
             if valid_birds:
                 rarest_bird = min(valid_birds, key=lambda x: float(x["weight"]))
