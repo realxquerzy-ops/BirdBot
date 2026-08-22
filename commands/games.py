@@ -136,7 +136,6 @@ class GamesCog(commands.Cog):
                 if rarest_bird["name"].lower() == caught_bird_name.lower():
                     self.bot.loop.create_task(self.unlock_achievement(user_id, "rarest", channel, guild_id=guild_id))
 
-    # --- Başarımları Görüntüleme Komutu Eklendi ---
     @discord.app_commands.command(name="achievements", description="View your unlocked achievements")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
     @discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)

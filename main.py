@@ -28,7 +28,6 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS pip_claims (
     PRIMARY KEY (guild_id, user_id)
 )''')
 
-# DÜZELTİLDİ: games.py ile uyumlu olması için sütun adı 'achievements' yapıldı ve PRIMARY KEY eklendi
 cursor.execute('''CREATE TABLE IF NOT EXISTS achievements (
     guild_id INTEGER,
     user_id INTEGER,
@@ -87,21 +86,18 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     print(f"{bot.user} olarak giriş yapıldı!")
     
-    # Tüm modülleri (cogs) yükle
     for filename in os.listdir("./commands"):
         if filename.endswith(".py") and filename != "__init__.py":
             cog_name = f"commands.{filename[:-3]}"
             await bot.load_extension(cog_name)
             print(f"Modül yüklendi: {cog_name}")
             
-    # Komutları senkronize et
     try:
         synced = await bot.tree.sync()
         print(f"{len(synced)} global komut senkronize edildi.")
     except Exception as e:
         print(f"Senkronizasyon hatası: {e}")
 
-# Cog'ların erişebilmesi için bot nesnesine ekliyoruz
 bot.birds = BIRDS
 bot.bird_values = BIRD_VALUES
 bot.whitelisted_users = WHITELISTED_USERS
@@ -110,7 +106,6 @@ bot.spawn_states = spawn_states
 bot.db_conn = conn
 bot.db_cursor = cursor
 
-# Token kontrolü ve başlatma
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     print("❌ HATA: DISCORD_TOKEN bulunamadı! Lütfen Railway Variables kısmına ekleyin.")
