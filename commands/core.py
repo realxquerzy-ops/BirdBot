@@ -22,9 +22,9 @@ class CoreCog(commands.Cog):
         cursor.execute("SELECT guild_id, channel_id FROM guild_settings")
         return {str(row[0]): row[1] for row in cursor.fetchall()}
 
-    @tasks.loop(seconds=60.0)
+    @tasks.loop(seconds=300.0)
     async def bird_spawner(self):
-        wait_time = random.randint(60, 120)
+        wait_time = random.randint(300, 600)
         await asyncio.sleep(wait_time)
 
         server_settings = self.get_all_server_settings()
