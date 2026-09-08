@@ -19,9 +19,9 @@ conn = psycopg2.connect(
     user=url.username,
     password=url.password,
     host=url.hostname,
-    port=url.port,
-    autocommit=True
+    port=url.port
 )
+conn.autocommit = True
 cursor = conn.cursor()
 
 # Tabloları Tertemiz Sıfırdan Oluşturuyoruz
