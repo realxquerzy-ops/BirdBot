@@ -56,7 +56,7 @@ class GamesCog(commands.Cog):
         cursor = self.bot.db_cursor
         conn = self.bot.db_conn
 
-        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = ? AND user_id = ?", (guild_id_db, user_id_val))
+        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = %s AND user_id = %s", (guild_id_db, user_id_val))
         row = cursor.fetchone()
         
         user_achievements = json.loads(row[0]) if row and row[0] else []
@@ -64,8 +64,10 @@ class GamesCog(commands.Cog):
         if ach_id not in user_achievements:
             user_achievements.append(ach_id)
             cursor.execute("""
-                INSERT OR REPLACE INTO achievements (guild_id, user_id, achievements) 
-                VALUES (?, ?, ?)
+                INSERT INTO achievements (guild_id, user_id, achievements) 
+                VALUES (%s, %s, %s)
+                ON CONFLICT (guild_id, user_id) 
+                DO UPDATE SET achievements = EXCLUDED.achievements
             """, (guild_id_db, user_id_val, json.dumps(user_achievements)))
             conn.commit()
 
@@ -86,7 +88,7 @@ class GamesCog(commands.Cog):
             return
 
         cursor = self.bot.db_cursor
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (int(guild_id), int(user_id)))
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (int(guild_id), int(user_id)))
         row = cursor.fetchone()
         
         user_birds = json.loads(row[0]) if row and row[0] else []
@@ -145,7 +147,7 @@ class GamesCog(commands.Cog):
         user_id = interaction.user.id
 
         cursor = self.bot.db_cursor
-        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
         row = cursor.fetchone()
         user_achievements = json.loads(row[0]) if row and row[0] else []
 
@@ -211,7 +213,7 @@ class GamesCog(commands.Cog):
 
         if guild_id:
             cursor = self.bot.db_cursor
-            cursor.execute("SELECT channel_id FROM guild_settings WHERE guild_id = ?", (guild_id,))
+            cursor.execute("SELECT channel_id FROM guild_settings WHERE guild_id = %s", (guild_id,))
             row = cursor.fetchone()
             if row and row[0]:
                 ch = self.bot.get_channel(row[0])
@@ -253,7 +255,7 @@ class GamesCog(commands.Cog):
         cursor = self.bot.db_cursor
         conn = self.bot.db_conn
 
-        cursor.execute("SELECT claimed FROM pip_claims WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+        cursor.execute("SELECT claimed FROM pip_claims WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
         row = cursor.fetchone()
         already_claimed = bool(row[0]) if row else False
 
@@ -269,20 +271,24 @@ class GamesCog(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
         inv_row = cursor.fetchone()
         user_birds = json.loads(inv_row[0]) if inv_row and inv_row[0] else []
         
         user_birds.extend(["Good Bird", "Good Bird"])
 
         cursor.execute("""
-            INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
-            VALUES (?, ?, ?)
+            INSERT INTO inventories (guild_id, user_id, birds) 
+            VALUES (%s, %s, %s)
+            ON CONFLICT (guild_id, user_id) 
+            DO UPDATE SET birds = EXCLUDED.birds
         """, (guild_id, user_id, json.dumps(user_birds)))
 
         cursor.execute("""
-            INSERT OR REPLACE INTO pip_claims (guild_id, user_id, claimed) 
-            VALUES (?, ?, 1)
+            INSERT INTO pip_claims (guild_id, user_id, claimed) 
+            VALUES (%s, %s, 1)
+            ON CONFLICT (guild_id, user_id) 
+            DO UPDATE SET claimed = EXCLUDED.claimed
         """, (guild_id, user_id))
         conn.commit()
 
@@ -346,7 +352,7 @@ class GamesCog(commands.Cog):
             cursor = self.bot.db_cursor
             conn = self.bot.db_conn
 
-            cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+            cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
             row = cursor.fetchone()
             user_birds = json.loads(row[0]) if row and row[0] else []
 
@@ -386,8 +392,9 @@ class GamesCog(commands.Cog):
                     user_birds.append(matched_bird_name)
                 
                 cursor.execute("""
-                    INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
-                    VALUES (?, ?, ?)
+                    INSERT INTO inventories (guild_id, user_id, birds) 
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds
                 """, (guild_id, user_id, json.dumps(user_birds)))
                 conn.commit()
 
@@ -407,8 +414,9 @@ class GamesCog(commands.Cog):
                     user_birds.remove(matched_bird_name)
                 
                 cursor.execute("""
-                    INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
-                    VALUES (?, ?, ?)
+                    INSERT INTO inventories (guild_id, user_id, birds) 
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds
                 """, (guild_id, user_id, json.dumps(user_birds)))
                 conn.commit()
 
@@ -466,14 +474,14 @@ class GamesCog(commands.Cog):
             cursor = self.bot.db_cursor
             conn = self.bot.db_conn
 
-            cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, receiver_id))
+            cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, receiver_id))
             receiver_row = cursor.fetchone()
             receiver_birds = json.loads(receiver_row[0]) if receiver_row and receiver_row[0] else []
 
             if len(receiver_birds) == 0:
                 await self.unlock_achievement(sender_id, "nice_guy", interaction.channel, guild_id)
 
-            cursor.execute("SELECT birds FROM inventories WHERE guild_id = ? AND user_id = ?", (guild_id, sender_id))
+            cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, sender_id))
             sender_row = cursor.fetchone()
             sender_birds = json.loads(sender_row[0]) if sender_row and sender_row[0] else []
 
@@ -486,16 +494,18 @@ class GamesCog(commands.Cog):
                 sender_birds.remove(matched_bird_name)
 
             cursor.execute("""
-                INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
-                VALUES (?, ?, ?)
+                INSERT INTO inventories (guild_id, user_id, birds) 
+                VALUES (%s, %s, %s)
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds
             """, (guild_id, sender_id, json.dumps(sender_birds)))
 
             for _ in range(number):
                 receiver_birds.append(matched_bird_name)
 
             cursor.execute("""
-                INSERT OR REPLACE INTO inventories (guild_id, user_id, birds) 
-                VALUES (?, ?, ?)
+                INSERT INTO inventories (guild_id, user_id, birds) 
+                VALUES (%s, %s, %s)
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds
             """, (guild_id, receiver_id, json.dumps(receiver_birds)))
             conn.commit()
 

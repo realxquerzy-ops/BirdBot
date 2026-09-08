@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Local data files (replaced by Railway PostgreSQL)
+*.json
+bot_data.db
+*.db
+
+# Env files
+.env
