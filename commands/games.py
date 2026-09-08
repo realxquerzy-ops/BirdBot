@@ -286,7 +286,7 @@ class GamesCog(commands.Cog):
 
         cursor.execute("""
             INSERT INTO pip_claims (guild_id, user_id, claimed) 
-            VALUES (%s, %s, 1)
+            VALUES (%s, %s, TRUE)
             ON CONFLICT (guild_id, user_id) 
             DO UPDATE SET claimed = EXCLUDED.claimed
         """, (guild_id, user_id))
