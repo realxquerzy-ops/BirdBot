@@ -143,3 +143,39 @@ class Database:
             """,
             (guild_id, user_id),
         )
+
+    def get_birdpass(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT xp, claimed_level FROM birdpass WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
+        if row:
+            return float(row[0]), int(row[1])
+        return 0.0, 1
+
+    def save_birdpass(self, guild_id, user_id, xp, claimed_level):
+        self.execute(
+            """
+            INSERT INTO birdpass (guild_id, user_id, xp, claimed_level) VALUES (%s, %s, %s, %s)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET xp = EXCLUDED.xp, claimed_level = EXCLUDED.claimed_level
+            """,
+            (guild_id, user_id, xp, claimed_level),
+        )
+
+    def get_last_daily_claim(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT last_claim FROM daily_claims WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
+        if row and row[0] is not None:
+            return row[0].isoformat()
+        return None
+
+    def set_daily_claim(self, guild_id, user_id, date_iso):
+        self.execute(
+            """
+            INSERT INTO daily_claims (guild_id, user_id, last_claim) VALUES (%s, %s, %s)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET last_claim = EXCLUDED.last_claim
+            """,
+            (guild_id, user_id, date_iso),
+        )

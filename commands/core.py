@@ -157,6 +157,13 @@ class CoreCog(commands.Cog):
             except Exception:
                 pass
 
+        birdpass_cog = self.bot.get_cog("BirdPassCog")
+        if birdpass_cog:
+            try:
+                await birdpass_cog.add_xp(int(guild_id), int(user_id), message.channel, caught_bird)
+            except Exception as e:
+                print(f"Error in birdpass xp: {e}")
+
         await message.reply(f"🎉 **{message.author.mention}** successfully caught the **{caught_bird}** in **{catch_duration:.2f}s**!")
 
     @discord.app_commands.command(name="help", description="Show bot commands")
@@ -178,7 +185,9 @@ class CoreCog(commands.Cog):
                 "</gift:0> - Gift birds to another user\n"
                 "</dm:0> - DM settings or info\n"
                 "</gamble:0> - Gamble your birds\n"
-                "</trade:0> - Trade birds with someone"
+                "</trade:0> - Trade birds with someone\n"
+                "</birdpass:0> - View your BirdPass level and rewards\n"
+                "</daily:0> - Claim your daily reward"
             ),
             color=discord.Color.blue()
         )

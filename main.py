@@ -48,6 +48,21 @@ db.execute('''CREATE TABLE IF NOT EXISTS birds_data (
     value REAL
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS birdpass (
+    guild_id BIGINT,
+    user_id BIGINT,
+    xp REAL DEFAULT 0,
+    claimed_level INTEGER DEFAULT 1,
+    PRIMARY KEY (guild_id, user_id)
+)''')
+
+db.execute('''CREATE TABLE IF NOT EXISTS daily_claims (
+    guild_id BIGINT,
+    user_id BIGINT,
+    last_claim DATE,
+    PRIMARY KEY (guild_id, user_id)
+)''')
+
 # Sorgu hızı için indeksler
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_guild ON inventories (guild_id)")
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_user ON inventories (user_id)")
