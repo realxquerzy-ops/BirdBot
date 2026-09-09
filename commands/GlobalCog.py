@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-import json
+
 
 class GlobalCog(commands.Cog):
     def __init__(self, bot):
@@ -24,19 +24,13 @@ class GlobalCog(commands.Cog):
     async def global_leaderboard(self, interaction: discord.Interaction, filter_by: str = "value", server_id: str = None):
         await interaction.response.defer(ephemeral=False)
         try:
-            cursor = self.bot.db_cursor
             fastest_times = getattr(self.bot, "fastest_times", {})
-            
-            # Kuş değerleri sözlüğünü oluştur
-            bird_values = {}
-            for bird in self.bot.birds:
-                bird_values[bird["name"].lower()] = bird.get("value", 0)
+            bird_values = self.bot.bird_values_lower
 
             # --- SUNUCU BAZLI FİLTRELER ---
             if filter_by in ["server_value", "server_count", "server_fastest_time"]:
-                cursor.execute("SELECT guild_id, user_id, birds FROM inventories")
-                rows = cursor.fetchall()
-                
+                rows = self.bot.db.fetchall("SELECT guild_id, user_id, birds FROM inventories")
+
                 if not rows:
                     await interaction.followup.send("❌ No inventory data found yet!", ephemeral=True)
                     return
@@ -44,9 +38,7 @@ class GlobalCog(commands.Cog):
                 server_inventories_map = {}
                 for row in rows:
                     g_id, u_id, birds_json = str(row[0]), str(row[1]), row[2]
-                    if g_id not in server_inventories_map:
-                        server_inventories_map[g_id] = {}
-                    server_inventories_map[g_id][u_id] = json.loads(birds_json)
+                    server_inventories_map.setdefault(g_id, {})[u_id] = self.bot.db._loads_json(birds_json)
 
                 server_stats = {}
                 for g_id, users_dict in server_inventories_map.items():
@@ -59,18 +51,17 @@ class GlobalCog(commands.Cog):
                     total_v = 0
                     total_c = 0
                     server_best_time = float('inf')
-                    
+
                     for u_id, birds_list in users_dict.items():
                         total_c += len(birds_list)
-                        for b_name in birds_list:
-                            total_v += bird_values.get(b_name.lower(), 0)
-                        
+                        total_v += sum(bird_values.get(b_name.lower(), 0) for b_name in birds_list)
+
                         if u_id in fastest_times and fastest_times[u_id] < server_best_time:
                             server_best_time = fastest_times[u_id]
-                    
+
                     if server_best_time == float('inf'):
                         server_best_time = 0.0
-                    
+
                     server_stats[g_name] = {"value": total_v, "count": total_c, "fastest_time": server_best_time}
 
                 sort_map = {"server_value": "value", "server_count": "count", "server_fastest_time": "fastest_time"}
@@ -82,38 +73,42 @@ class GlobalCog(commands.Cog):
                     title=f"🌐 Global Server Leaderboard ({filter_by.replace('_', ' ').capitalize()})",
                     color=discord.Color.gold()
                 )
-                
+
                 desc_lines = []
                 for idx, (s_name, stats) in enumerate(sorted_servers, 1):
                     medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"`#{idx}`"
                     time_display = f"{stats['fastest_time']:.2f}s" if stats['fastest_time'] > 0 else "N/A"
                     desc_lines.append(f"{medal} **{s_name}** — Val: `{stats['value']}` | Birds: `{stats['count']}` | Time: `{time_display}`")
-                
+
                 embed.description = "\n".join(desc_lines) if desc_lines else "No data available."
                 await interaction.followup.send(embed=embed)
                 return
 
-            # --- OYUNCU BAZLI FİLTRELER (PostgreSQL %s parametresi ile) ---
+            # --- OYUNCU BAZLI FİLTRELER ---
             if server_id:
-                cursor.execute("SELECT user_id, birds FROM inventories WHERE guild_id = %s", (int(server_id),))
+                rows = self.bot.db.fetchall(
+                    "SELECT user_id, birds FROM inventories WHERE guild_id = %s", (int(server_id),)
+                )
             else:
-                cursor.execute("SELECT user_id, birds FROM inventories")
-            
-            rows = cursor.fetchall()
+                rows = self.bot.db.fetchall("SELECT user_id, birds FROM inventories")
+
             if not rows:
                 await interaction.followup.send("❌ No inventory data found yet!", ephemeral=True)
                 return
 
             user_stats = {}
             for row in rows:
-                u_id, birds_list = str(row[0]), json.loads(row[1])
+                u_id = str(row[0])
+                birds_list = self.bot.db._loads_json(row[1])
                 if u_id not in user_stats:
-                    user_best = fastest_times.get(u_id, 0.0)
-                    user_stats[u_id] = {"value": 0, "count": 0, "fastest_time": user_best}
-                
+                    user_stats[u_id] = {
+                        "value": 0,
+                        "count": 0,
+                        "fastest_time": fastest_times.get(u_id, 0.0)
+                    }
+
                 user_stats[u_id]["count"] += len(birds_list)
-                for b_name in birds_list:
-                    user_stats[u_id]["value"] += bird_values.get(b_name.lower(), 0)
+                user_stats[u_id]["value"] += sum(bird_values.get(b_name.lower(), 0) for b_name in birds_list)
 
             if not user_stats:
                 await interaction.followup.send("❌ No data found for this filter/scope!", ephemeral=True)
@@ -131,7 +126,7 @@ class GlobalCog(commands.Cog):
                 if not user_stats:
                     await interaction.followup.send("❌ No fastest time data available yet!", ephemeral=True)
                     return
-                is_reverse = False  # En kısa süre en üstte
+                is_reverse = False
 
             sorted_users = sorted(user_stats.items(), key=lambda x: x[1][sort_key], reverse=is_reverse)[:10]
 
@@ -153,6 +148,7 @@ class GlobalCog(commands.Cog):
         except Exception as e:
             print(f"Error in glb command: {e}")
             await interaction.followup.send("❌ An error occurred while generating the leaderboard.", ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(GlobalCog(bot))

@@ -1,6 +1,8 @@
+from collections import Counter
+
 import discord
 from discord.ext import commands
-import json
+
 
 class MultiQuantityModal(discord.ui.Modal):
     def __init__(self, select_item, max_count, view_instance):
@@ -8,7 +10,7 @@ class MultiQuantityModal(discord.ui.Modal):
         self.select_item = select_item
         self.max_count = max_count
         self.view_instance = view_instance
-        
+
         self.count_input = discord.ui.TextInput(
             label=f"Quantity (Max: {max_count})",
             placeholder="Enter a number...",
@@ -29,24 +31,32 @@ class MultiQuantityModal(discord.ui.Modal):
 
         bird_name = self.select_item.selected_bird_temp
         self.view_instance.add_offer(self.select_item.owner_id, bird_name, val)
-        
+
         if hasattr(self.view_instance, "confirmed_users"):
             self.view_instance.confirmed_users.clear()
 
         await interaction.response.edit_message(content=self.view_instance.update_status_text(), view=self.view_instance)
+
 
 class TradeSelect(discord.ui.Select):
     def __init__(self, user_birds, placeholder, owner_id, bird_values):
         self.user_birds = user_birds
         self.owner_id = owner_id
         self.bird_values = bird_values
-        unique_birds = list(set(user_birds))
-        
-        options = [discord.SelectOption(label=bird, description=f"Value: {bird_values.get(bird.lower(), 1)} | Available: {user_birds.count(bird)}") for bird in unique_birds[:25]]
-        
+        bird_counts = Counter(user_birds)
+        unique_birds = list(bird_counts.keys())
+
+        options = [
+            discord.SelectOption(
+                label=bird,
+                description=f"Value: {bird_values.get(bird.lower(), 1)} | Available: {bird_counts[bird]}"
+            )
+            for bird in unique_birds[:25]
+        ]
+
         if not options:
             options = [discord.SelectOption(label="No birds available", description="You have no birds")]
-            
+
         super().__init__(placeholder=placeholder, min_values=1, max_values=1, options=options)
         self.selected_bird_temp = None
 
@@ -65,6 +75,7 @@ class TradeSelect(discord.ui.Select):
         modal = MultiQuantityModal(self, max_count, self.view)
         await interaction.response.send_modal(modal)
 
+
 class TradeConfirmView(discord.ui.View):
     def __init__(self, bot, initiator, target, guild_id):
         super().__init__(timeout=60)
@@ -79,23 +90,14 @@ class TradeConfirmView(discord.ui.View):
             target.id: {}
         }
 
-        cursor = bot.db_cursor
-        # PostgreSQL uyumlu %s parametreleri kullanıldı
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (int(guild_id), initiator.id))
-        init_row = cursor.fetchone()
-        self.init_birds = json.loads(init_row[0]) if init_row else []
+        self.init_birds = bot.db.get_inventory(int(guild_id), initiator.id)
+        self.target_birds = bot.db.get_inventory(int(guild_id), target.id)
 
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (int(guild_id), target.id))
-        target_row = cursor.fetchone()
-        self.target_birds = json.loads(target_row[0]) if target_row else []
-
-        bird_values = {}
-        for bird in bot.birds:
-            bird_values[bird["name"].lower()] = bird.get("value", 1)
+        bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
 
         self.init_select = TradeSelect(self.init_birds, f"{initiator.name}: Add birds to offer", initiator.id, bird_values)
         self.target_select = TradeSelect(self.target_birds, f"{target.name}: Add birds to offer", target.id, bird_values)
-        
+
         self.add_item(self.init_select)
         self.add_item(self.target_select)
 
@@ -106,7 +108,7 @@ class TradeConfirmView(discord.ui.View):
         user_offer = self.offers.get(user_id, {})
         if not user_offer:
             return "Nothing selected"
-        
+
         items = []
         for bird, count in user_offer.items():
             items.append(f"`{count}x {bird}`")
@@ -129,23 +131,10 @@ class TradeConfirmView(discord.ui.View):
         user_id_val = int(user_id)
         guild_id_val = int(self.guild_id)
 
-        cursor = self.bot.db_cursor
-        conn = self.bot.db_conn
-
-        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = %s AND user_id = %s", (guild_id_val, user_id_val))
-        row = cursor.fetchone()
-        user_achievements = json.loads(row[0]) if row and row[0] else []
-
+        user_achievements = self.bot.db.get_achievements(guild_id_val, user_id_val)
         if ach_id not in user_achievements:
             user_achievements.append(ach_id)
-            # PostgreSQL upsert (ON CONFLICT) yapısına dönüştürüldü
-            cursor.execute("""
-                INSERT INTO achievements (guild_id, user_id, achievements) 
-                VALUES (%s, %s, %s)
-                ON CONFLICT (guild_id, user_id) 
-                DO UPDATE SET achievements = EXCLUDED.achievements
-            """, (guild_id_val, user_id_val, json.dumps(user_achievements)))
-            conn.commit()
+            self.bot.db.save_achievements(guild_id_val, user_id_val, user_achievements)
 
             games_cog = self.bot.get_cog("GamesCog")
             if games_cog and channel and hasattr(games_cog, "ACHIEVEMENTS_LIST"):
@@ -180,16 +169,8 @@ class TradeConfirmView(discord.ui.View):
         init_id = self.initiator.id
         target_id = self.target.id
 
-        cursor = self.bot.db_cursor
-        conn = self.bot.db_conn
-
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id_int, init_id))
-        init_row = cursor.fetchone()
-        init_user_birds = json.loads(init_row[0]) if init_row and init_row[0] else []
-
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id_int, target_id))
-        target_row = cursor.fetchone()
-        target_user_birds = json.loads(target_row[0]) if target_row and target_row[0] else []
+        init_user_birds = self.bot.db.get_inventory(guild_id_int, init_id)
+        target_user_birds = self.bot.db.get_inventory(guild_id_int, target_id)
 
         can_trade = True
         for bird, count in self.offers[init_id].items():
@@ -215,16 +196,14 @@ class TradeConfirmView(discord.ui.View):
                 target_user_birds.remove(bird)
                 init_user_birds.append(bird)
 
-        # PostgreSQL upsert (ON CONFLICT) yapısına dönüştürüldü
-        cursor.execute("INSERT INTO inventories (guild_id, user_id, birds) VALUES (%s, %s, %s) ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds", (guild_id_int, init_id, json.dumps(init_user_birds)))
-        cursor.execute("INSERT INTO inventories (guild_id, user_id, birds) VALUES (%s, %s, %s) ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds", (guild_id_int, target_id, json.dumps(target_user_birds)))
-        conn.commit()
+        self.bot.db.save_inventory(guild_id_int, init_id, init_user_birds)
+        self.bot.db.save_inventory(guild_id_int, target_id, target_user_birds)
 
         await self.unlock_achievement(self.initiator.id, "a_trade", interaction.channel)
         await self.unlock_achievement(self.target.id, "a_trade", interaction.channel)
 
         bird_values = {b["name"].lower(): b.get("value", 1) for b in self.bot.birds}
-        
+
         init_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[init_id].items())
         target_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[target_id].items())
 
@@ -254,6 +233,7 @@ class TradeConfirmView(discord.ui.View):
         await interaction.response.edit_message(content="❌ Trade was cancelled by a participant.", view=None)
         self.stop()
 
+
 class TradeRequestView(discord.ui.View):
     def __init__(self, bot, initiator, target, guild_id):
         super().__init__(timeout=30)
@@ -267,12 +247,8 @@ class TradeRequestView(discord.ui.View):
         if interaction.user != self.target:
             await interaction.response.send_message("Only the user who received the trade request can accept it!", ephemeral=True)
             return
-        
-        cursor = self.bot.db_cursor
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (int(self.guild_id), self.target.id))
-        row = cursor.fetchone()
-        target_birds = json.loads(row[0]) if row and row[0] else []
 
+        target_birds = self.bot.db.get_inventory(int(self.guild_id), self.target.id)
         if not target_birds:
             await interaction.response.send_message("You don't have any birds to trade in this server!", ephemeral=True)
             return
@@ -293,6 +269,7 @@ class TradeRequestView(discord.ui.View):
         await interaction.response.edit_message(content="❌ Trade request declined.", view=None)
         self.stop()
 
+
 class SocialCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -311,11 +288,8 @@ class SocialCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
-        cursor = self.bot.db_cursor
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, interaction.user.id))
-        row = cursor.fetchone()
-        user_birds = json.loads(row[0]) if row and row[0] else []
-        
+        user_birds = self.bot.db.get_inventory(guild_id, interaction.user.id)
+
         if not user_birds:
             await interaction.followup.send("❌ You don't have any birds in your inventory to trade!", ephemeral=True)
             return
@@ -342,7 +316,7 @@ class SocialCog(commands.Cog):
         if interaction.user.id not in self.bot.whitelisted_users:
             await interaction.followup.send("❌ You do not have permission to use this command!", ephemeral=True)
             return
-        
+
         await interaction.followup.send("Message sent successfully!", ephemeral=True)
         if interaction.channel:
             await interaction.channel.send(message)
@@ -357,8 +331,7 @@ class SocialCog(commands.Cog):
             return
 
         guild_id = str(interaction.guild.id) if interaction.guild else "dm"
-        if hasattr(self.bot, "spawn_states"):
-            self.bot.spawn_states[guild_id] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
+        self.bot.spawn_states[guild_id] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
         await interaction.followup.send("🧹 **Debug:** Spawn lock has been successfully forced reset!", ephemeral=True)
 
     @discord.app_commands.command(name="setchannel", description="Set the channel where birds will spawn (Admin only)")
@@ -372,15 +345,9 @@ class SocialCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
-        cursor = self.bot.db_cursor
-        conn = self.bot.db_conn
-
-        # PostgreSQL upsert (ON CONFLICT) yapısına dönüştürüldü
-        cursor.execute("INSERT INTO guild_settings (guild_id, channel_id) VALUES (%s, %s) ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id", (guild_id, channel.id))
-        conn.commit()
-        
-        if hasattr(self.bot, "spawn_states"):
-            self.bot.spawn_states[str(guild_id)] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
+        self.bot.db.set_server_channel(guild_id, channel.id)
+        self.bot.server_settings[str(guild_id)] = channel.id
+        self.bot.spawn_states[str(guild_id)] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
 
         embed = discord.Embed(
             title="⚙️ Setup Complete",
@@ -388,6 +355,7 @@ class SocialCog(commands.Cog):
             color=discord.Color.green()
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(SocialCog(bot))

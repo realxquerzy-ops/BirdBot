@@ -1,6 +1,8 @@
+from collections import Counter
+
 import discord
 from discord.ext import commands
-import json
+
 
 class EconomyCog(commands.Cog):
     def __init__(self, bot):
@@ -16,11 +18,11 @@ class EconomyCog(commands.Cog):
         await interaction.response.defer()
         total_weight = sum(float(bird["weight"]) for bird in self.bot.birds)
         rates_text = ""
-        
+
         for bird in self.bot.birds:
             percentage = (float(bird["weight"]) / total_weight) * 100 if total_weight > 0 else 0.0
             rates_text += f"• **{bird['name']}** (Value: `{bird['value']}`): `{percentage:.2f}%`\n"
-            
+
         embed = discord.Embed(
             title="📊 Bird Spawn Drop Rates & Values",
             description=rates_text,
@@ -40,14 +42,9 @@ class EconomyCog(commands.Cog):
 
         guild_id = interaction.guild.id
         user_id = interaction.user.id
-        
-        cursor = self.bot.db_cursor
-        # PostgreSQL uyumlu %s parametresi kullanıldı
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
-        row = cursor.fetchone()
-        
-        user_birds = json.loads(row[0]) if row else []
-        
+
+        user_birds = self.bot.db.get_inventory(guild_id, user_id)
+
         if not user_birds:
             embed = discord.Embed(
                 title=f"📦 {interaction.user.name}'s Server Inventory",
@@ -57,10 +54,10 @@ class EconomyCog(commands.Cog):
             await interaction.followup.send(embed=embed)
             return
 
-        bird_counts = {bird: user_birds.count(bird) for bird in set(user_birds)}
+        bird_counts = Counter(user_birds)
         total_val = self.get_inventory_value(user_birds)
         inventory_text = "\n".join([f"• **{bird}** (Value: {self.bot.bird_values.get(bird, 1)}): `{count}x`" for bird, count in bird_counts.items()])
-        
+
         embed = discord.Embed(
             title=f"📦 {interaction.user.name}'s Server Bird Inventory",
             description=inventory_text + f"\n\n💎 **Total Inventory Value:** `{total_val}` points",
@@ -79,12 +76,10 @@ class EconomyCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
-        cursor = self.bot.db_cursor
-        
-        # PostgreSQL uyumlu %s parametresi kullanıldı
-        cursor.execute("SELECT user_id, birds FROM inventories WHERE guild_id = %s", (guild_id,))
-        rows = cursor.fetchall()
-        
+        rows = self.bot.db.fetchall(
+            "SELECT user_id, birds FROM inventories WHERE guild_id = %s", (guild_id,)
+        )
+
         if not rows:
             embed = discord.Embed(
                 title="🏆 Server Bird Value Leaderboard",
@@ -97,9 +92,8 @@ class EconomyCog(commands.Cog):
         user_totals = []
         for row in rows:
             user_id = row[0]
-            birds = json.loads(row[1])
-            total_value = self.get_inventory_value(birds)
-            user_totals.append((user_id, total_value, len(birds)))
+            birds = self.bot.db._loads_json(row[1])
+            user_totals.append((user_id, self.get_inventory_value(birds), len(birds)))
 
         user_totals.sort(key=lambda x: x[1], reverse=True)
         top_users = user_totals[:10]
@@ -111,7 +105,7 @@ class EconomyCog(commands.Cog):
                 username = user.name
             except Exception:
                 username = f"User_{user_id}"
-            
+
             medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"`#{index}`"
             lb_text += f"{medal} **{username}** — `{total_val}` points *({total_count} birds)*\n"
 
@@ -121,6 +115,7 @@ class EconomyCog(commands.Cog):
             color=discord.Color.gold()
         )
         await interaction.followup.send(embed=embed)
+
 
 async def setup(bot):
     await bot.add_cog(EconomyCog(bot))

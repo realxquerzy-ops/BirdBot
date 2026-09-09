@@ -1,63 +1,58 @@
 import os
-import json
+
 import discord
 from discord.ext import commands
-import psycopg2
-from urllib.parse import urlparse
 
-# --- VERİTABANI BAĞLANTISI (PostgreSQL) ---
+from db import Database
+
+# --- VERİTABANI BAĞLANTISI (PostgreSQL - Railway) ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     print("❌ HATA: DATABASE_URL bulunamadı! Lütfen Railway PostgreSQL değişkenini ekleyin.")
     exit(1)
 
-# Railway URL'sini parse edip psycopg2 ile bağlanıyoruz
-url = urlparse(DATABASE_URL)
-conn = psycopg2.connect(
-    database=url.path[1:],
-    user=url.username,
-    password=url.password,
-    host=url.hostname,
-    port=url.port
-)
-conn.autocommit = True
-cursor = conn.cursor()
+db = Database(DATABASE_URL)
 
-# Tabloları Tertemiz Sıfırdan Oluşturuyoruz
-cursor.execute('''CREATE TABLE IF NOT EXISTS inventories (
+# Tabloları Oluşturuyoruz
+db.execute('''CREATE TABLE IF NOT EXISTS inventories (
     guild_id BIGINT,
     user_id BIGINT,
     birds TEXT,
     PRIMARY KEY (guild_id, user_id)
 )''')
 
-cursor.execute('''CREATE TABLE IF NOT EXISTS guild_settings (
+db.execute('''CREATE TABLE IF NOT EXISTS guild_settings (
     guild_id BIGINT PRIMARY KEY,
     channel_id BIGINT
 )''')
 
-cursor.execute('''CREATE TABLE IF NOT EXISTS pip_claims (
+db.execute('''CREATE TABLE IF NOT EXISTS pip_claims (
     guild_id BIGINT,
     user_id BIGINT,
     claimed BOOLEAN,
     PRIMARY KEY (guild_id, user_id)
 )''')
 
-cursor.execute('''CREATE TABLE IF NOT EXISTS achievements (
+db.execute('''CREATE TABLE IF NOT EXISTS achievements (
     guild_id BIGINT,
     user_id BIGINT,
     achievements TEXT,
     PRIMARY KEY (guild_id, user_id)
 )''')
 
-cursor.execute('''CREATE TABLE IF NOT EXISTS birds_data (
+db.execute('''CREATE TABLE IF NOT EXISTS birds_data (
     name TEXT PRIMARY KEY,
     sticker_id BIGINT,
     weight REAL,
     value REAL
 )''')
-conn.commit()
+
+# Sorgu hızı için indeksler
+db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_guild ON inventories (guild_id)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_user ON inventories (user_id)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_achievements_guild ON achievements (guild_id)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_pip_claims_guild ON pip_claims (guild_id)")
 
 # --- SABİT KUŞLARI VERİTABANINA YÜKLE ---
 default_birds = [
@@ -79,17 +74,16 @@ default_birds = [
 ]
 
 for bird in default_birds:
-    cursor.execute("""
+    db.execute("""
         INSERT INTO birds_data (name, sticker_id, weight, value) 
         VALUES (%s, %s, %s, %s) 
         ON CONFLICT (name) DO NOTHING
     """, bird)
-conn.commit()
 
-# --- GLOBAL VERİLER VE YARDIMCI FONKSİYONLAR ---
-cursor.execute("SELECT name, sticker_id, weight, value FROM birds_data")
-BIRDS = [{"name": r[0], "sticker_id": r[1], "weight": r[2], "value": r[3]} for r in cursor.fetchall()]
+# --- GLOBAL VERİLER ---
+BIRDS = db.get_all_birds()
 BIRD_VALUES = {bird["name"]: bird["value"] for bird in BIRDS}
+BIRD_VALUES_LOWER = {bird["name"].lower(): bird["value"] for bird in BIRDS}
 
 WHITELISTED_USERS = [1469734369739538677]
 RESOURCE_GUILD_IDS = [
@@ -98,8 +92,6 @@ RESOURCE_GUILD_IDS = [
     1540320958429265920
 ]
 
-spawn_states = {}
-
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -107,14 +99,14 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     print(f"{bot.user} olarak giriş yapıldı ve PostgreSQL aktif!")
-    
+
     if os.path.exists("./commands"):
         for filename in os.listdir("./commands"):
             if filename.endswith(".py") and filename != "__init__.py":
                 cog_name = f"commands.{filename[:-3]}"
                 await bot.load_extension(cog_name)
                 print(f"Modül yüklendi: {cog_name}")
-            
+
     try:
         synced = await bot.tree.sync()
         print(f"{len(synced)} global komut senkronize edildi.")
@@ -123,11 +115,12 @@ async def on_ready():
 
 bot.birds = BIRDS
 bot.bird_values = BIRD_VALUES
+bot.bird_values_lower = BIRD_VALUES_LOWER
 bot.whitelisted_users = WHITELISTED_USERS
 bot.resource_guild_ids = RESOURCE_GUILD_IDS
-bot.spawn_states = spawn_states
-bot.db_conn = conn
-bot.db_cursor = cursor
+bot.spawn_states = {}
+bot.server_settings = db.get_server_settings()
+bot.db = db
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:

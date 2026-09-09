@@ -1,14 +1,17 @@
+import random
+from collections import Counter
+
 import discord
 from discord.ext import commands
-import random
-import json
+
 
 class GamesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        valid_birds = [bird for bird in self.bot.birds if "weight" in bird]
+        self.rarest_bird = min(valid_birds, key=lambda x: float(x["weight"])) if valid_birds else None
 
     ACHIEVEMENTS_LIST = {
-        # Mevcut Başarımlar
         "it_begins": {"name": "It begins...", "desc": "Catch your first bird", "hidden": False},
         "likes_birds": {"name": "Likes Birds", "desc": "Catch 10 birds", "hidden": False},
         "is_a_bird": {"name": "IS a bird", "desc": "Catch 100 birds", "hidden": False},
@@ -27,8 +30,6 @@ class GamesCog(commands.Cog):
         "giveaway": {"name": "Giveaway", "desc": "Give away a valuable bird for free in a trade", "hidden": True},
         "a_real_bird": {"name": "A Real Bird", "desc": "Get 100% on the /birdrate command", "hidden": True},
         "rarest": {"name": "Rarest", "desc": "Catch the rarest bird", "hidden": True},
-
-        # Yeni Eklenen Başarımlar
         "lets_go_gambling": {"name": "Let's go gambling!", "desc": "Gamble for the very first time", "hidden": False},
         "aww_dang_it": {"name": "Aw dang it!", "desc": "Lose your first gamble", "hidden": True},
         "skill_issue": {"name": "Skill Issue", "desc": "???", "hidden": True},
@@ -53,23 +54,11 @@ class GamesCog(commands.Cog):
         user_id_val = int(user_id)
         guild_id_db = int(guild_id) if guild_id else 0
 
-        cursor = self.bot.db_cursor
-        conn = self.bot.db_conn
-
-        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = %s AND user_id = %s", (guild_id_db, user_id_val))
-        row = cursor.fetchone()
-        
-        user_achievements = json.loads(row[0]) if row and row[0] else []
+        user_achievements = self.bot.db.get_achievements(guild_id_db, user_id_val)
 
         if ach_id not in user_achievements:
             user_achievements.append(ach_id)
-            cursor.execute("""
-                INSERT INTO achievements (guild_id, user_id, achievements) 
-                VALUES (%s, %s, %s)
-                ON CONFLICT (guild_id, user_id) 
-                DO UPDATE SET achievements = EXCLUDED.achievements
-            """, (guild_id_db, user_id_val, json.dumps(user_achievements)))
-            conn.commit()
+            self.bot.db.save_achievements(guild_id_db, user_id_val, user_achievements)
 
             ach_info = self.ACHIEVEMENTS_LIST.get(ach_id)
             if ach_info and channel:
@@ -87,56 +76,42 @@ class GamesCog(commands.Cog):
         if not guild_id:
             return
 
-        cursor = self.bot.db_cursor
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (int(guild_id), int(user_id)))
-        row = cursor.fetchone()
-        
-        user_birds = json.loads(row[0]) if row and row[0] else []
+        user_birds = self.bot.db.get_inventory(int(guild_id), int(user_id))
         total_birds = len(user_birds)
+        inv_dict = Counter(user_birds)
 
-        if isinstance(user_birds, list):
-            inv_dict = {b: user_birds.count(b) for b in set(user_birds)}
-        else:
-            inv_dict = user_birds
+        unlocks = []
 
         if total_birds >= 1:
-            self.bot.loop.create_task(self.unlock_achievement(user_id, "it_begins", channel, guild_id=guild_id))
-
+            unlocks.append("it_begins")
         if total_birds >= 10:
-            self.bot.loop.create_task(self.unlock_achievement(user_id, "likes_birds", channel, guild_id=guild_id))
-
+            unlocks.append("likes_birds")
         if total_birds >= 100:
-            self.bot.loop.create_task(self.unlock_achievement(user_id, "is_a_bird", channel, guild_id=guild_id))
+            unlocks.append("is_a_bird")
 
         if self.bot.birds:
-            all_bird_names = [b["name"] for b in self.bot.birds]
-            has_all = all(inv_dict.get(name, 0) >= 1 for name in all_bird_names)
-            has_all_x5 = all(inv_dict.get(name, 0) >= 5 for name in all_bird_names)
-            has_all_x25 = all(inv_dict.get(name, 0) >= 25 for name in all_bird_names)
-
-            if has_all:
-                self.bot.loop.create_task(self.unlock_achievement(user_id, "collector", channel, guild_id=guild_id))
-            if has_all_x5:
-                self.bot.loop.create_task(self.unlock_achievement(user_id, "ultra_bird", channel, guild_id=guild_id))
-            if has_all_x25:
-                self.bot.loop.create_task(self.unlock_achievement(user_id, "god_bird", channel, guild_id=guild_id))
+            all_bird_names = [bird["name"] for bird in self.bot.birds]
+            if all(inv_dict.get(name, 0) >= 1 for name in all_bird_names):
+                unlocks.append("collector")
+            if all(inv_dict.get(name, 0) >= 5 for name in all_bird_names):
+                unlocks.append("ultra_bird")
+            if all(inv_dict.get(name, 0) >= 25 for name in all_bird_names):
+                unlocks.append("god_bird")
 
         if 0 < total_birds < 10:
-            total_value = 0
-            for b_name, count in inv_dict.items():
-                for bird_obj in self.bot.birds:
-                    if bird_obj["name"].lower() == b_name.lower():
-                        total_value += bird_obj.get("value", 0) * count
-                        break
+            total_value = sum(
+                self.bot.bird_values_lower.get(name.lower(), 0) * count
+                for name, count in inv_dict.items()
+            )
             if total_value >= 50:
-                self.bot.loop.create_task(self.unlock_achievement(user_id, "rich_bird", channel, guild_id=guild_id))
+                unlocks.append("rich_bird")
 
-        if caught_bird_name and self.bot.birds:
-            valid_birds = [b for b in self.bot.birds if "weight" in b]
-            if valid_birds:
-                rarest_bird = min(valid_birds, key=lambda x: float(x["weight"]))
-                if rarest_bird["name"].lower() == caught_bird_name.lower():
-                    self.bot.loop.create_task(self.unlock_achievement(user_id, "rarest", channel, guild_id=guild_id))
+        if caught_bird_name and self.rarest_bird:
+            if self.rarest_bird["name"].lower() == caught_bird_name.lower():
+                unlocks.append("rarest")
+
+        for ach_id in unlocks:
+            self.bot.loop.create_task(self.unlock_achievement(user_id, ach_id, channel, guild_id=guild_id))
 
     @discord.app_commands.command(name="achievements", description="View your unlocked achievements")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
@@ -146,10 +121,7 @@ class GamesCog(commands.Cog):
         guild_id = interaction.guild.id if interaction.guild else 0
         user_id = interaction.user.id
 
-        cursor = self.bot.db_cursor
-        cursor.execute("SELECT achievements FROM achievements WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
-        row = cursor.fetchone()
-        user_achievements = json.loads(row[0]) if row and row[0] else []
+        user_achievements = self.bot.db.get_achievements(guild_id, user_id)
 
         description = ""
         for ach_id, info in self.ACHIEVEMENTS_LIST.items():
@@ -167,28 +139,6 @@ class GamesCog(commands.Cog):
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot:
-            return
-
-        content_lower = message.content.lower().strip()
-        if content_lower == "milk":
-            await self.unlock_achievement(
-                message.author.id, 
-                "milk", 
-                message.channel, 
-                guild_id=message.guild.id if message.guild else None
-            )
-
-        if self.bot.user in message.mentions:
-            await self.unlock_achievement(
-                message.author.id,
-                "why_ping",
-                message.channel,
-                guild_id=message.guild.id if message.guild else None
-            )
-
     @discord.app_commands.command(name="bird", description="Display a bird")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
     @discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
@@ -203,7 +153,7 @@ class GamesCog(commands.Cog):
         if not matched_bird:
             available_birds = ", ".join([b["name"] for b in self.bot.birds])
             await interaction.followup.send(
-                f"❌ Bird '{bird_name}' not found!\n**Available Birds:** {available_birds}", 
+                f"❌ Bird '{bird_name}' not found!\n**Available Birds:** {available_birds}",
                 ephemeral=True
             )
             return
@@ -212,11 +162,9 @@ class GamesCog(commands.Cog):
         target_channel = interaction.channel
 
         if guild_id:
-            cursor = self.bot.db_cursor
-            cursor.execute("SELECT channel_id FROM guild_settings WHERE guild_id = %s", (guild_id,))
-            row = cursor.fetchone()
-            if row and row[0]:
-                ch = self.bot.get_channel(row[0])
+            channel_id = self.bot.db.get_server_channel(guild_id)
+            if channel_id:
+                ch = self.bot.get_channel(channel_id)
                 if ch:
                     target_channel = ch
 
@@ -252,17 +200,12 @@ class GamesCog(commands.Cog):
         user_id = interaction.user.id
         guild_id = interaction.guild.id
 
-        cursor = self.bot.db_cursor
-        conn = self.bot.db_conn
-
-        cursor.execute("SELECT claimed FROM pip_claims WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
-        row = cursor.fetchone()
-        already_claimed = bool(row[0]) if row else False
+        already_claimed = self.bot.db.get_pip_claim(guild_id, user_id)
 
         if already_claimed:
             await self.unlock_achievement(interaction.user.id, "not_again", interaction.channel, guild_id=interaction.guild.id)
             await self.unlock_achievement(interaction.user.id, "pip", interaction.channel, guild_id=interaction.guild.id)
-            
+
             embed = discord.Embed(
                 title="❌ Already Claimed",
                 description="You have already claimed this secret reward in this server!",
@@ -271,26 +214,11 @@ class GamesCog(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
-        cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
-        inv_row = cursor.fetchone()
-        user_birds = json.loads(inv_row[0]) if inv_row and inv_row[0] else []
-        
+        user_birds = self.bot.db.get_inventory(guild_id, user_id)
         user_birds.extend(["Good Bird", "Good Bird"])
 
-        cursor.execute("""
-            INSERT INTO inventories (guild_id, user_id, birds) 
-            VALUES (%s, %s, %s)
-            ON CONFLICT (guild_id, user_id) 
-            DO UPDATE SET birds = EXCLUDED.birds
-        """, (guild_id, user_id, json.dumps(user_birds)))
-
-        cursor.execute("""
-            INSERT INTO pip_claims (guild_id, user_id, claimed) 
-            VALUES (%s, %s, TRUE)
-            ON CONFLICT (guild_id, user_id) 
-            DO UPDATE SET claimed = EXCLUDED.claimed
-        """, (guild_id, user_id))
-        conn.commit()
+        self.bot.db.save_inventory(guild_id, user_id, user_birds)
+        self.bot.db.set_pip_claim(guild_id, user_id)
 
         await self.unlock_achievement(interaction.user.id, "pip", interaction.channel, guild_id=interaction.guild.id)
         self.check_stat_achievements(interaction.user.id, interaction.guild.id, interaction.channel)
@@ -309,12 +237,12 @@ class GamesCog(commands.Cog):
         await interaction.response.defer()
         target_user = member or interaction.user
         rate_val = random.randint(85, 100) if target_user.id in self.bot.whitelisted_users else random.randint(1, 100)
-            
+
         if rate_val == 100:
             await self.unlock_achievement(
-                target_user.id, 
-                "a_real_bird", 
-                interaction.channel, 
+                target_user.id,
+                "a_real_bird",
+                interaction.channel,
                 guild_id=interaction.guild.id if interaction.guild else None
             )
 
@@ -349,14 +277,9 @@ class GamesCog(commands.Cog):
             guild_id = interaction.guild.id
             user_id = interaction.user.id
 
-            cursor = self.bot.db_cursor
-            conn = self.bot.db_conn
-
-            cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, user_id))
-            row = cursor.fetchone()
-            user_birds = json.loads(row[0]) if row and row[0] else []
-
+            user_birds = self.bot.db.get_inventory(guild_id, user_id)
             current_count = user_birds.count(matched_bird_name)
+
             if current_count <= 0:
                 await self.unlock_achievement(user_id, "broke_gambler", interaction.channel, guild_id)
                 await interaction.followup.send(f"❌ You don't own any **{matched_bird_name}** to gamble!", ephemeral=True)
@@ -379,24 +302,15 @@ class GamesCog(commands.Cog):
 
             await self.unlock_achievement(user_id, "lets_go_gambling", interaction.channel, guild_id)
 
-            valid_birds = [b for b in self.bot.birds if "weight" in b]
-            if valid_birds:
-                rarest_bird = min(valid_birds, key=lambda x: float(x["weight"]))
-                if rarest_bird["name"].lower() == matched_bird_name.lower() and number == current_count:
+            if self.rarest_bird:
+                if self.rarest_bird["name"].lower() == matched_bird_name.lower() and number == current_count:
                     await self.unlock_achievement(user_id, "big_bet", interaction.channel, guild_id)
 
             won = random.choice([True, False])
 
             if won:
-                for _ in range(number):
-                    user_birds.append(matched_bird_name)
-                
-                cursor.execute("""
-                    INSERT INTO inventories (guild_id, user_id, birds) 
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds
-                """, (guild_id, user_id, json.dumps(user_birds)))
-                conn.commit()
+                user_birds.extend([matched_bird_name] * number)
+                self.bot.db.save_inventory(guild_id, user_id, user_birds)
 
                 if is_all:
                     await self.unlock_achievement(user_id, "oh_my_god", interaction.channel, guild_id)
@@ -410,15 +324,15 @@ class GamesCog(commands.Cog):
                 )
                 await interaction.followup.send(embed=embed)
             else:
-                for _ in range(number):
-                    user_birds.remove(matched_bird_name)
-                
-                cursor.execute("""
-                    INSERT INTO inventories (guild_id, user_id, birds) 
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds
-                """, (guild_id, user_id, json.dumps(user_birds)))
-                conn.commit()
+                remaining = []
+                removed = 0
+                for bird in user_birds:
+                    if bird == matched_bird_name and removed < number:
+                        removed += 1
+                    else:
+                        remaining.append(bird)
+                user_birds = remaining
+                self.bot.db.save_inventory(guild_id, user_id, user_birds)
 
                 await self.unlock_achievement(user_id, "aww_dang_it", interaction.channel, guild_id)
                 if is_all:
@@ -471,43 +385,29 @@ class GamesCog(commands.Cog):
             sender_id = interaction.user.id
             receiver_id = member.id
 
-            cursor = self.bot.db_cursor
-            conn = self.bot.db_conn
-
-            cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, receiver_id))
-            receiver_row = cursor.fetchone()
-            receiver_birds = json.loads(receiver_row[0]) if receiver_row and receiver_row[0] else []
-
+            receiver_birds = self.bot.db.get_inventory(guild_id, receiver_id)
             if len(receiver_birds) == 0:
                 await self.unlock_achievement(sender_id, "nice_guy", interaction.channel, guild_id)
 
-            cursor.execute("SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s", (guild_id, sender_id))
-            sender_row = cursor.fetchone()
-            sender_birds = json.loads(sender_row[0]) if sender_row and sender_row[0] else []
-
+            sender_birds = self.bot.db.get_inventory(guild_id, sender_id)
             current_count = sender_birds.count(matched_bird_name)
+
             if current_count < number:
                 await interaction.followup.send(f"❌ You don't have enough **{matched_bird_name}**! You have `{current_count}`.", ephemeral=True)
                 return
 
-            for _ in range(number):
-                sender_birds.remove(matched_bird_name)
+            remaining = []
+            removed = 0
+            for bird in sender_birds:
+                if bird == matched_bird_name and removed < number:
+                    removed += 1
+                else:
+                    remaining.append(bird)
+            sender_birds = remaining
+            self.bot.db.save_inventory(guild_id, sender_id, sender_birds)
 
-            cursor.execute("""
-                INSERT INTO inventories (guild_id, user_id, birds) 
-                VALUES (%s, %s, %s)
-                ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds
-            """, (guild_id, sender_id, json.dumps(sender_birds)))
-
-            for _ in range(number):
-                receiver_birds.append(matched_bird_name)
-
-            cursor.execute("""
-                INSERT INTO inventories (guild_id, user_id, birds) 
-                VALUES (%s, %s, %s)
-                ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds
-            """, (guild_id, receiver_id, json.dumps(receiver_birds)))
-            conn.commit()
+            receiver_birds.extend([matched_bird_name] * number)
+            self.bot.db.save_inventory(guild_id, receiver_id, receiver_birds)
 
             self.check_stat_achievements(member.id, interaction.guild.id, interaction.channel)
 
@@ -515,10 +415,8 @@ class GamesCog(commands.Cog):
             if bird_value > 13:
                 await self.unlock_achievement(interaction.user.id, "giveaway", interaction.channel, guild_id=interaction.guild.id)
 
-            valid_birds = [b for b in self.bot.birds if "weight" in b]
-            if valid_birds:
-                rarest_bird = min(valid_birds, key=lambda x: float(x["weight"]))
-                if rarest_bird["name"].lower() == matched_bird_name.lower():
+            if self.rarest_bird:
+                if self.rarest_bird["name"].lower() == matched_bird_name.lower():
                     await self.unlock_achievement(interaction.user.id, "generous_rare", interaction.channel, guild_id)
 
             embed = discord.Embed(
@@ -530,6 +428,7 @@ class GamesCog(commands.Cog):
         except Exception as e:
             print(f"Error in gift command: {e}")
             await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
+
 
 async def setup(bot):
     await bot.add_cog(GamesCog(bot))
