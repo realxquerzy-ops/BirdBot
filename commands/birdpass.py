@@ -99,7 +99,7 @@ class BirdPassCog(commands.Cog):
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def birdpass(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
         if not interaction.guild:
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
@@ -134,13 +134,13 @@ class BirdPassCog(commands.Cog):
             color=discord.Color.gold()
         )
         embed.set_footer(text="Catch birds to earn XP and level up! Rewards are added to your inventory automatically.")
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="daily", description="Claim your daily reward: get 2x Fat Bird!")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def daily(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
         if not interaction.guild:
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
@@ -161,7 +161,7 @@ class BirdPassCog(commands.Cog):
                 description=f"You already claimed your daily reward today!\nCome back in **{hours}h {minutes}m**.",
                 color=discord.Color.red()
             )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed)
             return
 
         inventory = self.bot.db.get_inventory(guild_id, user_id)
@@ -174,7 +174,7 @@ class BirdPassCog(commands.Cog):
             description=f"🎉 **{interaction.user.mention}** claimed their daily reward and received **2x Fat Bird**!",
             color=discord.Color.green()
         )
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed)
 
 
 async def setup(bot):
