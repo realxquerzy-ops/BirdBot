@@ -145,6 +145,18 @@ class GlobalCog(commands.Cog):
             embed.description = "\n".join(desc_lines)
             await interaction.followup.send(embed=embed)
 
+            if filter_by == "value" and sorted_users and sorted_users[0][1]["value"] > 0:
+                games_cog = self.bot.get_cog("GamesCog")
+                if games_cog:
+                    games_cog.bot.loop.create_task(
+                        games_cog.unlock_achievement(
+                            sorted_users[0][0],
+                            "top_1",
+                            interaction.channel,
+                            guild_id=interaction.guild.id if interaction.guild else None,
+                        )
+                    )
+
         except Exception as e:
             print(f"Error in glb command: {e}")
             await interaction.followup.send("❌ An error occurred while generating the leaderboard.", ephemeral=True)

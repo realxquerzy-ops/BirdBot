@@ -10,6 +10,8 @@ class GamesCog(commands.Cog):
         self.bot = bot
         valid_birds = [bird for bird in self.bot.birds if "weight" in bird]
         self.rarest_bird = min(valid_birds, key=lambda x: float(x["weight"])) if valid_birds else None
+        self.catch_streaks = {}
+        self.gamble_losses = {}
 
     ACHIEVEMENTS_LIST = {
         "it_begins": {"name": "It begins...", "desc": "Catch your first bird", "hidden": False},
@@ -112,6 +114,17 @@ class GamesCog(commands.Cog):
 
         for ach_id in unlocks:
             self.bot.loop.create_task(self.unlock_achievement(user_id, ach_id, channel, guild_id=guild_id))
+
+    def check_luck_streak(self, user_id, guild_id, channel, bird_name):
+        key = (str(guild_id), str(user_id))
+        last_bird, count = self.catch_streaks.get(key, (None, 0))
+        if last_bird == bird_name:
+            count += 1
+        else:
+            last_bird, count = bird_name, 1
+        self.catch_streaks[key] = (last_bird, count)
+        if count >= 3:
+            self.bot.loop.create_task(self.unlock_achievement(user_id, "luck", channel, guild_id=guild_id))
 
     @discord.app_commands.command(name="achievements", description="View your unlocked achievements")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
@@ -307,8 +320,10 @@ class GamesCog(commands.Cog):
                     await self.unlock_achievement(user_id, "big_bet", interaction.channel, guild_id)
 
             won = random.choice([True, False])
+            key = (str(guild_id), str(user_id))
 
             if won:
+                self.gamble_losses.pop(key, None)
                 user_birds.extend([matched_bird_name] * number)
                 self.bot.db.save_inventory(guild_id, user_id, user_birds)
 
@@ -333,6 +348,15 @@ class GamesCog(commands.Cog):
                         remaining.append(bird)
                 user_birds = remaining
                 self.bot.db.save_inventory(guild_id, user_id, user_birds)
+
+                self.gamble_losses[key] = self.gamble_losses.get(key, 0) + 1
+                if self.gamble_losses[key] >= 3:
+                    await self.unlock_achievement(user_id, "triple_loss", interaction.channel, guild_id)
+                    self.gamble_losses[key] = 0
+
+                bird_value = self.bot.bird_values.get(matched_bird_name, 0)
+                if number * bird_value >= 20:
+                    await self.unlock_achievement(user_id, "skill_issue", interaction.channel, guild_id)
 
                 await self.unlock_achievement(user_id, "aww_dang_it", interaction.channel, guild_id)
                 if is_all:

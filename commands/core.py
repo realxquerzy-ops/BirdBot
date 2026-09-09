@@ -7,6 +7,8 @@ from discord.ext import commands, tasks
 
 
 class CoreCog(commands.Cog):
+    MISSPELLS = {"burd", "berd", "bord", "birdd", "birt", "beard", "b1rd", "gbird", "birb"}
+
     def __init__(self, bot):
         self.bot = bot
         if not hasattr(self.bot, "fastest_times"):
@@ -108,6 +110,8 @@ class CoreCog(commands.Cog):
 
         if isinstance(message.channel, discord.DMChannel):
             if "no pip" in content_lower:
+                if games_cog:
+                    await games_cog.unlock_achievement(message.author.id, "just_why", message.channel)
                 await message.reply("\n".join(["pip the goat"] * 5))
             else:
                 await message.reply("pip")
@@ -124,7 +128,18 @@ class CoreCog(commands.Cog):
             self.bot.spawn_states[guild_id] = self._new_spawn_state()
 
         state = self.bot.spawn_states[guild_id]
-        if not state["active"] or content_lower != "bird":
+        if not state["active"]:
+            return
+
+        if content_lower != "bird":
+            if "brd" in content_lower or content_lower in self.MISSPELLS:
+                if games_cog:
+                    await games_cog.unlock_achievement(
+                        message.author.id,
+                        "mispell_bird",
+                        message.channel,
+                        guild_id=message.guild.id,
+                    )
             return
 
         caught_bird = state["name"]
@@ -149,6 +164,7 @@ class CoreCog(commands.Cog):
                 await games_cog.unlock_achievement(message.author.id, "perfect", message.channel, guild_id=message.guild.id)
 
             games_cog.check_stat_achievements(message.author.id, message.guild.id, message.channel, caught_bird_name=caught_bird)
+            games_cog.check_luck_streak(message.author.id, message.guild.id, message.channel, caught_bird)
 
         msg_obj = state.get("msg_obj")
         if msg_obj:

@@ -116,6 +116,14 @@ class EconomyCog(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
 
+        if top_users:
+            top_id = top_users[0][0]
+            games_cog = self.bot.get_cog("GamesCog")
+            if games_cog and top_users[0][1] > 0:
+                games_cog.bot.loop.create_task(
+                    games_cog.unlock_achievement(top_id, "top_1", interaction.channel, guild_id=guild_id)
+                )
+
 
 async def setup(bot):
     await bot.add_cog(EconomyCog(bot))
