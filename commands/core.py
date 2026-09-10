@@ -202,6 +202,7 @@ class CoreCog(commands.Cog):
                 "</dm:0> - DM settings or info\n"
                 "</gamble:0> - Gamble your birds\n"
                 "</trade:0> - Trade birds with someone\n"
+                "</fight:0> - Fight another user with your birds\n"
                 "</birdpass:0> - View your BirdPass level and rewards\n"
                 "</daily:0> - Claim your daily reward"
             ),
