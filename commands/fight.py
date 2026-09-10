@@ -84,7 +84,7 @@ def is_active(bot, member):
 
 def attack_roll(bot, atk_commit):
     total = commit_value(bot, atk_commit)
-    chance = min(0.90, 0.30 + total / 40.0)
+    chance = min(0.75, 0.20 + total / 60.0)
     steal_num = 1 + (1 if total >= 8 else 0) + (1 if total >= 40 else 0)
     return chance, min(steal_num, 3)
 
