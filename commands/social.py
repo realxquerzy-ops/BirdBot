@@ -317,9 +317,15 @@ class SocialCog(commands.Cog):
             await interaction.followup.send("❌ You do not have permission to use this command!", ephemeral=True)
             return
 
-        await interaction.followup.send("Message sent successfully!", ephemeral=True)
-        if interaction.channel:
-            await interaction.channel.send(message)
+        try:
+            if interaction.channel:
+                await interaction.channel.send(message)
+                await interaction.followup.send("Message sent successfully!", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ No channel found to send message.", ephemeral=True)
+        except Exception as e:
+            print(f"[say] error: {e}")
+            await interaction.followup.send(f"❌ Failed to send: {e}", ephemeral=True)
 
     @discord.app_commands.command(name="resetspawn", description="Debug: Force reset the bird spawn lock for this context (Whitelist only)")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
