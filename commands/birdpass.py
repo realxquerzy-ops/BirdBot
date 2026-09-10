@@ -56,9 +56,9 @@ class BirdPassCog(commands.Cog):
     def _today_iso(self):
         return datetime.now(timezone.utc).date().isoformat()
 
-    async def add_xp(self, guild_id, user_id, channel, bird_name):
+    async def add_xp(self, guild_id, user_id, channel, bird_name, xp_mult=1.0):
         value = self.bot.bird_values.get(bird_name, 1)
-        xp_gain = int(round(value))
+        xp_gain = int(round(value * xp_mult))
 
         guild_id_db = int(guild_id)
         user_id_db = int(user_id)

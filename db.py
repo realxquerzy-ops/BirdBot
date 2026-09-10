@@ -179,3 +179,26 @@ class Database:
             """,
             (guild_id, user_id, date_iso),
         )
+
+    def get_powerups(self, guild_id, user_id):
+        rows = self.fetchall(
+            "SELECT powerup, qty FROM powerups WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
+        return {r[0]: r[1] for r in rows}
+
+    def add_powerup(self, guild_id, user_id, powerup, qty=1):
+        self.execute(
+            """
+            INSERT INTO powerups (guild_id, user_id, powerup, qty) VALUES (%s, %s, %s, %s)
+            ON CONFLICT (guild_id, user_id, powerup) DO UPDATE SET qty = powerups.qty + EXCLUDED.qty
+            """,
+            (guild_id, user_id, powerup, qty),
+        )
+
+    def remove_powerup(self, guild_id, user_id, powerup, qty=1):
+        self.execute(
+            "UPDATE powerups SET qty = GREATEST(qty - %s, 0) WHERE guild_id = %s AND user_id = %s AND powerup = %s",
+            (qty, guild_id, user_id, powerup),
+        )
+        self.execute("DELETE FROM powerups WHERE qty <= 0")

@@ -145,28 +145,50 @@ class FightView(discord.ui.View):
 
         attacker_wins = random.random() < p_atk
 
+        powerups_cog = self.bot.get_cog("PowerupsCog")
         if attacker_wins:
-            def_inv = remove_birds(def_inv, def_bird, def_count)
-            atk_inv.extend([def_bird] * def_count)
             winner, loser = self.attacker, self.defender
         else:
-            atk_inv = remove_birds(atk_inv, atk_bird, atk_count)
-            def_inv.extend([atk_bird] * atk_count)
             winner, loser = self.defender, self.attacker
+
+        shield_saved = False
+        if powerups_cog and powerups_cog.consume_shield(guild_id_int, loser.id):
+            shield_saved = True
+        else:
+            if attacker_wins:
+                def_inv = remove_birds(def_inv, def_bird, def_count)
+                atk_inv.extend([def_bird] * def_count)
+            else:
+                atk_inv = remove_birds(atk_inv, atk_bird, atk_count)
+                def_inv.extend([atk_bird] * atk_count)
 
         self.bot.db.save_inventory(guild_id_int, self.attacker.id, atk_inv)
         self.bot.db.save_inventory(guild_id_int, self.defender.id, def_inv)
 
+        loot = ""
+        if powerups_cog:
+            drop = powerups_cog.random_drop()
+            if drop:
+                powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
+                loot = f"\n🎁 **{winner.name}** looted a powerup: {powerups_cog.POWERUPS[drop]['name']}!"
+
         pct_atk = max(0.01, min(99.99, p_atk * 100))
         pct_def = round(100 - pct_atk, 2)
+
+        result_lines = []
+        if shield_saved:
+            result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
+        else:
+            result_lines.append(f"💥 **{winner.mention}** won the fight and took home the pot!")
+        result_lines.append(f"📉 **{loser.name}** lost their wager..." if not shield_saved else f"📉 **{loser.name}** lost the fight but kept their birds!")
+        result_lines.append(loot)
 
         embed = discord.Embed(
             title="⚔️ Fight Over!",
             description=(
                 f"🔵 **{self.attacker.name}** (`{atk_count}x {atk_bird}`, worth `{atk_val}`)  vs  "
                 f"🟢 **{self.defender.name}** (`{def_count}x {def_bird}`, worth `{def_val}`)\n\n"
-                f"💥 **{winner.mention}** won the fight and took home the pot!\n"
-                f"📉 **{loser.name}** lost their wager..."
+                + "\n".join(result_lines)
             ),
             color=discord.Color.green() if winner == self.attacker else discord.Color.blurple()
         )

@@ -339,32 +339,42 @@ class GamesCog(commands.Cog):
                 )
                 await interaction.followup.send(embed=embed)
             else:
-                remaining = []
-                removed = 0
-                for bird in user_birds:
-                    if bird == matched_bird_name and removed < number:
-                        removed += 1
-                    else:
-                        remaining.append(bird)
-                user_birds = remaining
-                self.bot.db.save_inventory(guild_id, user_id, user_birds)
+                powerups_cog = self.bot.get_cog("PowerupsCog")
+                shield_saved = False
+                if powerups_cog and powerups_cog.consume_shield(guild_id, user_id):
+                    shield_saved = True
+                else:
+                    remaining = []
+                    removed = 0
+                    for bird in user_birds:
+                        if bird == matched_bird_name and removed < number:
+                            removed += 1
+                        else:
+                            remaining.append(bird)
+                    user_birds = remaining
+                    self.bot.db.save_inventory(guild_id, user_id, user_birds)
 
                 self.gamble_losses[key] = self.gamble_losses.get(key, 0) + 1
                 if self.gamble_losses[key] >= 3:
                     await self.unlock_achievement(user_id, "triple_loss", interaction.channel, guild_id)
                     self.gamble_losses[key] = 0
 
-                bird_value = self.bot.bird_values.get(matched_bird_name, 0)
-                if number * bird_value >= 20:
-                    await self.unlock_achievement(user_id, "skill_issue", interaction.channel, guild_id)
+                if not shield_saved:
+                    bird_value = self.bot.bird_values.get(matched_bird_name, 0)
+                    if number * bird_value >= 20:
+                        await self.unlock_achievement(user_id, "skill_issue", interaction.channel, guild_id)
 
                 await self.unlock_achievement(user_id, "aww_dang_it", interaction.channel, guild_id)
                 if is_all:
                     await self.unlock_achievement(user_id, "its_over", interaction.channel, guild_id)
 
+                description = f"💀 **{interaction.user.mention}** lost the gamble and their **{number}x {matched_bird_name}** vanished..."
+                if shield_saved:
+                    description += "\n🛡️ **Your Shield protected your birds!**"
+
                 embed = discord.Embed(
                     title="🎰 Gamble Lost!",
-                    description=f"💀 **{interaction.user.mention}** lost the gamble and their **{number}x {matched_bird_name}** vanished...",
+                    description=description,
                     color=discord.Color.red()
                 )
                 await interaction.followup.send(embed=embed)

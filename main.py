@@ -63,6 +63,14 @@ db.execute('''CREATE TABLE IF NOT EXISTS daily_claims (
     PRIMARY KEY (guild_id, user_id)
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS powerups (
+    guild_id BIGINT,
+    user_id BIGINT,
+    powerup TEXT,
+    qty INTEGER DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id, powerup)
+)''')
+
 # Sorgu hızı için indeksler
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_guild ON inventories (guild_id)")
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_user ON inventories (user_id)")

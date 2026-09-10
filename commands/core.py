@@ -146,15 +146,37 @@ class CoreCog(commands.Cog):
         spawn_time = state.get("spawn_time", time.time())
         catch_duration = time.time() - spawn_time
 
+        guild_id_int = int(guild_id)
+        user_id_int = int(user_id)
+
+        powerups_cog = self.bot.get_cog("PowerupsCog")
+        if powerups_cog and powerups_cog.consume_miss(guild_id_int, user_id_int):
+            state["active"] = False
+            state["name"] = None
+            await message.reply("💨 **The bird got spooked and flew away!** *(Distraction)*")
+            return
+
         if user_id not in self.bot.fastest_times or catch_duration < self.bot.fastest_times[user_id]:
             self.bot.fastest_times[user_id] = catch_duration
 
         state["active"] = False
         state["name"] = None
 
-        user_birds = self.bot.db.get_inventory(int(guild_id), int(user_id))
+        xp_mult = 1.0
+        double_catch = False
+        doubled = False
+        if powerups_cog:
+            self_mult, double_catch = powerups_cog.catch_effects(guild_id_int, user_id_int)
+            if powerups_cog.consume_half_xp(guild_id_int, user_id_int):
+                xp_mult *= 0.5
+            xp_mult *= self_mult
+
+        user_birds = self.bot.db.get_inventory(guild_id_int, user_id_int)
         user_birds.append(caught_bird)
-        self.bot.db.save_inventory(int(guild_id), int(user_id), user_birds)
+        if double_catch and random.random() < 0.20:
+            user_birds.append(caught_bird)
+            doubled = True
+        self.bot.db.save_inventory(guild_id_int, user_id_int, user_birds)
 
         if games_cog:
             if catch_duration < 3.0:
@@ -176,11 +198,12 @@ class CoreCog(commands.Cog):
         birdpass_cog = self.bot.get_cog("BirdPassCog")
         if birdpass_cog:
             try:
-                await birdpass_cog.add_xp(int(guild_id), int(user_id), message.channel, caught_bird)
+                await birdpass_cog.add_xp(guild_id_int, user_id_int, message.channel, caught_bird, xp_mult=xp_mult)
             except Exception as e:
                 print(f"Error in birdpass xp: {e}")
 
-        await message.reply(f"🎉 **{message.author.mention}** successfully caught the **{caught_bird}** in **{catch_duration:.2f}s**!")
+        extra = " *(... and a Lucky Net double! 🍀)*" if doubled else ""
+        await message.reply(f"🎉 **{message.author.mention}** successfully caught the **{caught_bird}** in **{catch_duration:.2f}s**!{extra}")
 
     @discord.app_commands.command(name="help", description="Show bot commands")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
@@ -203,6 +226,8 @@ class CoreCog(commands.Cog):
                 "</gamble:0> - Gamble your birds\n"
                 "</trade:0> - Trade birds with someone\n"
                 "</fight:0> - Fight another user with your birds\n"
+                "</powerups:0> - View your powerups and active effects\n"
+                "</use:0> - Use a powerup or sabotage another player\n"
                 "</birdpass:0> - View your BirdPass level and rewards\n"
                 "</daily:0> - Claim your daily reward"
             ),
