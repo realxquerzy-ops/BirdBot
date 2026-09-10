@@ -1,4 +1,5 @@
 import random
+import time
 from collections import Counter
 
 import discord
@@ -47,6 +48,22 @@ def weighted_pick(inventory, k, bot):
         remaining.pop(idx)
         rem_w.pop(idx)
     return chosen
+
+
+def deduct_birds(bot, guild_id, user_id, birds_list):
+    inv = bot.db.get_inventory(guild_id, user_id)
+    removed = []
+    for b in birds_list:
+        if b in inv:
+            inv.remove(b)
+            removed.append(b)
+    if removed:
+        bot.db.save_inventory(guild_id, user_id, inv)
+    return removed
+
+
+def survival_rate(elapsed):
+    return max(0.25, 1.0 - elapsed / 60.0)
 
 
 def attack_roll(bot, atk_commit):
@@ -309,6 +326,7 @@ class FightLiveView(discord.ui.View):
         self.defender = defender
         self.guild_id = str(guild_id)
         self.confirmed_users = set()
+        self.started_at = time.time()
 
         att_inv = bot.db.get_inventory(int(guild_id), attacker.id)
         def_inv = bot.db.get_inventory(int(guild_id), defender.id)
@@ -453,24 +471,42 @@ class FightLiveView(discord.ui.View):
             return
 
         guild_id_int = int(self.guild_id)
-        fleer = interaction.user
-        other = self.defender if fleer == self.attacker else self.attacker
+        elapsed = time.time() - self.started_at
+        p_survive = survival_rate(elapsed)
 
-        fleet_commit = self.commit[fleer.id]
-        expanded = []
-        for bird, n in fleet_commit.items():
-            expanded.extend([bird] * n)
-        random.shuffle(expanded)
+        results = {}
+        for player in [self.attacker, self.defender]:
+            commit = self.commit[player.id]
+            expanded = []
+            for bird, n in commit.items():
+                expanded.extend([bird] * n)
+            random.shuffle(expanded)
 
-        lost_half = expanded[: len(expanded) // 2] if expanded else []
-        moved = transfer_birds(self.bot, guild_id_int, fleer.id, other.id, lost_half)
+            survived = []
+            lost = []
+            for bird in expanded:
+                if random.random() < p_survive:
+                    survived.append(bird)
+                else:
+                    lost.append(bird)
+
+            lost = deduct_birds(self.bot, guild_id_int, player.id, lost)
+            results[player.id] = (survived, lost)
+
+        seconds = max(1, int(elapsed))
+        lines = []
+        for player in [self.attacker, self.defender]:
+            survived, lost = results[player.id]
+            kept_line = f"🕊️ **{player.name}** kept **{fmt_commit(Counter(survived))}**" if survived else f"🕊️ **{player.name}** kept nothing"
+            lost_line = f" — lost **{fmt_commit(Counter(lost))}**" if lost else ""
+            lines.append(kept_line + lost_line)
 
         embed = discord.Embed(
-            title="🏃 Fleed!",
+            title="🏃 Battle Ended in Retreat!",
             description=(
-                f"**{fleer.name}** fled the battle!\n"
-                f"🕊️ Half their birds escaped back home.\n"
-                f"⚔️ **{other.name}** captured **{fmt_commit(Counter(moved))}** from the escape!"
+                f"⏱️ The battle lasted `{seconds}s` — survival chance was `{p_survive * 100:.0f}%`.\n\n"
+                + "\n".join(lines)
+                + "\n\n🕊️ Survivors returned home; the fallen were claimed by the battle."
             ),
             color=discord.Color.greyple()
         )
