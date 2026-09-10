@@ -105,6 +105,8 @@ for bird in default_birds:
 
 # --- GLOBAL VERİLER ---
 BIRDS = db.get_all_birds()
+
+bot.presence_cache = {}
 BIRD_VALUES = {bird["name"]: bird["value"] for bird in BIRDS}
 BIRD_VALUES_LOWER = {bird["name"].lower(): bird["value"] for bird in BIRDS}
 
@@ -125,6 +127,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_presence_update(before, after):
     if before.status != after.status:
         print(f"[presence] {after} ({after.id}) -> {after.status}")
+        bot.presence_cache[after.id] = after.status
 
 @bot.event
 async def on_ready():

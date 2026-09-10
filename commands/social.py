@@ -348,14 +348,18 @@ class SocialCog(commands.Cog):
 
         status_map = {}
         for m in list(guild.members)[:10]:
-            status_map[str(m)] = f"{m.status}"
-        status_map["TARGET " + str(member)] = f"{member.status}"
+            # Use real-time cache if available, fall back to member.status
+            status = self.bot.presence_cache.get(m.id, m.status)
+            status_map[str(m)] = f"{status}"
+        
+        target_status = self.bot.presence_cache.get(member.id, member.status)
+        status_map["TARGET " + str(member)] = f"{target_status}"
 
         embed = discord.Embed(
             title="🔍 Presence Debug",
             description=(
                 f"👥 **Cached members in `{guild.name}`:** `{cached}`\n"
-                f"🎯 **{member}** status: `{member.status}`\n\n"
+                f"🎯 **{member}** status: `{target_status}`\n\n"
                 f"**Sample members:**\n" + "\n".join(f"`{k}` -> `{v}`" for k, v in status_map.items())
             ),
             color=discord.Color.blue()
