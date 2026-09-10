@@ -134,8 +134,9 @@ class FightAddModal(discord.ui.Modal):
 
 
 class FightAddSelect(discord.ui.Select):
-    def __init__(self, user_birds, owner_id, bird_values, placeholder, row=0):
+    def __init__(self, user_birds, owner_id, bird_values, placeholder, row=0, auto_battle=False):
         self.owner_id = owner_id
+        self.auto_battle = auto_battle
         counts = Counter(user_birds)
 
         options = [
@@ -162,7 +163,10 @@ class FightAddSelect(discord.ui.Select):
             return
 
         self.selected_bird = self.values[0]
-        await interaction.response.send_modal(FightAddModal(self, self.view))
+        if self.auto_battle:
+            await interaction.response.defer()  # Just acknowledge selection
+        else:
+            await interaction.response.send_modal(FightAddModal(self, self.view))
 
 
 class FightSetupView(discord.ui.View):
@@ -401,7 +405,7 @@ class AutoBattleView(discord.ui.View):
         self._resolving = False
         
         bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
-        self.def_select = FightAddSelect(def_inv, defender.id, bird_values, f"{defender.name}: Send birds to defend!", row=0)
+        self.def_select = FightAddSelect(def_inv, defender.id, bird_values, f"{defender.name}: Send birds to defend!", row=0, auto_battle=True)
         self.add_item(self.def_select)
         self.send_btn = discord.ui.Button(label="⚔️ Send Birds!", style=discord.ButtonStyle.green, row=1)
         self.send_btn.callback = self.send_birds
@@ -492,6 +496,7 @@ class AutoBattleView(discord.ui.View):
             embed = discord.Embed(
                 title="⚔️ Battle Over!",
                 description=(
+                    f"🔵 **{self.attacker.name}** attacked **{self.defender.name}**!\n"
                     f"🟢 **{self.defender.name}** failed to send birds in time!\n"
                     f"💥 **{self.attacker.mention}** wins by default!"
                 ),
@@ -674,7 +679,7 @@ class AutoBattleView(discord.ui.View):
         
         bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in self.bot.birds}
         self.clear_items()
-        self.def_select = FightAddSelect(new_def_inv, self.defender.id, bird_values, f"{self.defender.name}: Send more birds!", row=0)
+        self.def_select = FightAddSelect(new_def_inv, self.defender.id, bird_values, f"{self.defender.name}: Send more birds!", row=0, auto_battle=True)
         self.add_item(self.def_select)
         self.send_btn = discord.ui.Button(label="⚔️ Send Birds!", style=discord.ButtonStyle.green, row=1)
         self.send_btn.callback = self.send_birds
