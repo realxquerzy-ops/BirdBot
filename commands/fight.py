@@ -228,6 +228,14 @@ class FightConfirmView(discord.ui.View):
         await interaction.response.edit_message(content=None, embed=embed, view=None)
         self.stop()
 
+    async def on_timeout(self):
+        msg = getattr(self, "_expiry_msg", None) or self.message
+        if msg:
+            try:
+                await msg.edit(content="⏰ This fight has expired without confirmation.", embed=None, view=None)
+            except Exception:
+                pass
+
 
 class FightView(discord.ui.View):
     def __init__(self, bot, attacker, defender, guild_id, atk_bird, atk_count):
@@ -285,6 +293,7 @@ class FightView(discord.ui.View):
             atk_bird, atk_count, def_bird, def_count, p_atk
         )
         await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+        view._expiry_msg = interaction.message
 
     @discord.ui.button(label="Cancel Fight", style=discord.ButtonStyle.red, row=2)
     async def cancel_fight(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -293,6 +302,14 @@ class FightView(discord.ui.View):
             return
         await interaction.response.edit_message(content="❌ Fight was cancelled.", view=None)
         self.stop()
+
+    async def on_timeout(self):
+        msg = getattr(self, "_expiry_msg", None) or self.message
+        if msg:
+            try:
+                await msg.edit(content="⏰ This fight setup has expired.", view=None)
+            except Exception:
+                pass
 
 
 class FightRequestView(discord.ui.View):
@@ -304,6 +321,14 @@ class FightRequestView(discord.ui.View):
         self.guild_id = guild_id
         self.atk_bird = atk_bird
         self.atk_count = atk_count
+
+    async def on_timeout(self):
+        msg = getattr(self, "_expiry_msg", None) or self.message
+        if msg:
+            try:
+                await msg.edit(content="⏰ This fight challenge has expired.", view=None)
+            except Exception:
+                pass
 
     @discord.ui.button(label="Accept Fight", style=discord.ButtonStyle.green)
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -318,6 +343,7 @@ class FightRequestView(discord.ui.View):
 
         view = FightView(self.bot, self.attacker, self.defender, self.guild_id, self.atk_bird, self.atk_count)
         await interaction.response.edit_message(content=view.status_text(), view=view)
+        view._expiry_msg = interaction.message
 
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.red)
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -379,11 +405,12 @@ class FightCog(commands.Cog):
                 return
 
             view = FightRequestView(self.bot, interaction.user, member, guild_id, matched_bird_name, number)
-            await interaction.followup.send(
+            msg = await interaction.followup.send(
                 content=f"⚔️ {member.mention}, you have been challenged to a **bird fight** by **{interaction.user.name}**!"
                         f"\nThey wager `{number}x {matched_bird_name}`. Accept or decline!",
                 view=view
             )
+            view._expiry_msg = msg
         except Exception as e:
             print(f"Error in fight command: {e}")
             await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
