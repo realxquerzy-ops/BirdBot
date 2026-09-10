@@ -71,6 +71,18 @@ db.execute('''CREATE TABLE IF NOT EXISTS powerups (
     PRIMARY KEY (guild_id, user_id, powerup)
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS battle_log (
+    id SERIAL PRIMARY KEY,
+    guild_id BIGINT,
+    attacker_id BIGINT,
+    defender_id BIGINT,
+    winner_id BIGINT,
+    attacker_birds TEXT,
+    defender_birds TEXT,
+    stolen_birds TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+)''')
+
 # Sorgu hızı için indeksler
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_guild ON inventories (guild_id)")
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_user ON inventories (user_id)")

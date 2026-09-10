@@ -202,3 +202,40 @@ class Database:
             (qty, guild_id, user_id, powerup),
         )
         self.execute("DELETE FROM powerups WHERE qty <= 0")
+
+    def log_battle(self, guild_id, attacker_id, defender_id, winner_id, attacker_birds, defender_birds, stolen_birds):
+        self.execute(
+            """
+            INSERT INTO battle_log (guild_id, attacker_id, defender_id, winner_id, attacker_birds, defender_birds, stolen_birds)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (guild_id, attacker_id, defender_id, winner_id, json.dumps(attacker_birds), json.dumps(defender_birds), json.dumps(stolen_birds)),
+        )
+
+    def get_battle_log(self, guild_id, user_id, limit=10):
+        rows = self.fetchall(
+            """
+            SELECT attacker_id, defender_id, winner_id, attacker_birds, defender_birds, stolen_birds, created_at
+            FROM battle_log
+            WHERE guild_id = %s AND (attacker_id = %s OR defender_id = %s)
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (guild_id, user_id, user_id, limit),
+        )
+        return rows
+
+    def get_winrate(self, guild_id, user_id):
+        row = self.fetchone(
+            """
+            SELECT 
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE winner_id = %s) as wins
+            FROM battle_log
+            WHERE guild_id = %s AND (attacker_id = %s OR defender_id = %s)
+            """,
+            (user_id, guild_id, user_id, user_id),
+        )
+        if row and row[0] > 0:
+            return {"total": row[0], "wins": row[1], "rate": row[1] / row[0] * 100}
+        return {"total": 0, "wins": 0, "rate": 0}
