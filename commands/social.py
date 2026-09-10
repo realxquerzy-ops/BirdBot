@@ -334,6 +334,34 @@ class SocialCog(commands.Cog):
         self.bot.spawn_states[guild_id] = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
         await interaction.followup.send("🧹 **Debug:** Spawn lock has been successfully forced reset!", ephemeral=True)
 
+    @discord.app_commands.command(name="prescheck", description="Debug: check member presence cache (Whitelist only)")
+    @discord.app_commands.allowed_installs(guilds=True, users=True)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def prescheck(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+        if interaction.user.id not in self.bot.whitelisted_users:
+            await interaction.followup.send("❌ You do not have permission to use this debug command!", ephemeral=True)
+            return
+
+        guild = interaction.guild
+        cached = len(guild.members)
+
+        status_map = {}
+        for m in list(guild.members)[:10]:
+            status_map[str(m)] = f"{m.status}"
+        status_map["TARGET " + str(member)] = f"{member.status}"
+
+        embed = discord.Embed(
+            title="🔍 Presence Debug",
+            description=(
+                f"👥 **Cached members in `{guild.name}`:** `{cached}`\n"
+                f"🎯 **{member}** status: `{member.status}`\n\n"
+                f"**Sample members:**\n" + "\n".join(f"`{k}` -> `{v}`" for k, v in status_map.items())
+            ),
+            color=discord.Color.blue()
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @discord.app_commands.command(name="setchannel", description="Set the channel where birds will spawn (Admin only)")
     @discord.app_commands.checks.has_permissions(manage_channels=True)
     @discord.app_commands.allowed_installs(guilds=True, users=False)
