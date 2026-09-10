@@ -81,6 +81,154 @@ class FightSelect(discord.ui.Select):
         await interaction.response.send_modal(FightQuantityModal(self, self.view))
 
 
+class FightConfirmView(discord.ui.View):
+    def __init__(self, bot, attacker, defender, guild_id, atk_bird, atk_count, def_bird, def_count, p_atk):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.attacker = attacker
+        self.defender = defender
+        self.guild_id = str(guild_id)
+        self.atk_bird = atk_bird
+        self.atk_count = atk_count
+        self.def_bird = def_bird
+        self.def_count = def_count
+        self.p_atk = p_atk
+        self.confirmed_users = set()
+
+    def _worth(self, bird, count):
+        return int(self.bot.bird_values.get(bird, 1) * count)
+
+    def odds_bar(self):
+        pct_atk = max(0.01, min(99.99, self.p_atk * 100))
+        pct_def = max(0.01, min(99.99, 100 - pct_atk))
+        atk_blocks = round(10 * pct_atk / 100)
+        def_blocks = 10 - atk_blocks
+        bar = "🔵" * atk_blocks + "🟢" * def_blocks
+        return bar, pct_atk, pct_def
+
+    def build_embed(self):
+        atk_val = self._worth(self.atk_bird, self.atk_count)
+        def_val = self._worth(self.def_bird, self.def_count)
+        bar, pct_atk, pct_def = self.odds_bar()
+        atk_check = "✅" if self.attacker.id in self.confirmed_users else "⏳"
+        def_check = "✅" if self.defender.id in self.confirmed_users else "⏳"
+
+        embed = discord.Embed(
+            title="⚔️ Final Confirmation",
+            description=(
+                f"🔵 **{self.attacker.name}** wagers `{self.atk_count}x {self.atk_bird}` "
+                f"(worth `{atk_val}`) *({atk_check})*\n"
+                f"🟢 **{self.defender.name}** wagers `{self.def_count}x {self.def_bird}` "
+                f"(worth `{def_val}`) *({def_check})*\n\n"
+                f"🎲 **Win Odds**\n{bar}\n"
+                f"🔵 `{pct_atk:.2f}%` vs 🟢 `{pct_def:.2f}%`\n\n"
+                f"Both players must press **Confirm** to start the fight!"
+            ),
+            color=discord.Color.blurple()
+        )
+        return embed
+
+    @discord.ui.button(label="Confirm (Challenger)", style=discord.ButtonStyle.green, row=1)
+    async def confirm_attacker(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.attacker:
+            await interaction.response.send_message("❌ Only the challenger can confirm their wager!", ephemeral=True)
+            return
+        self.confirmed_users.add(self.attacker.id)
+        await self._after_confirm(interaction)
+
+    @discord.ui.button(label="Confirm (Defender)", style=discord.ButtonStyle.green, row=1)
+    async def confirm_defender(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.defender:
+            await interaction.response.send_message("❌ Only the defender can confirm their wager!", ephemeral=True)
+            return
+        self.confirmed_users.add(self.defender.id)
+        await self._after_confirm(interaction)
+
+    @discord.ui.button(label="Cancel Fight", style=discord.ButtonStyle.red, row=2)
+    async def cancel_fight(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user not in [self.attacker, self.defender]:
+            await interaction.response.send_message("❌ You cannot cancel this fight!", ephemeral=True)
+            return
+        await interaction.response.edit_message(content="❌ Fight was cancelled.", embed=None, view=None)
+        self.stop()
+
+    async def _after_confirm(self, interaction: discord.Interaction):
+        if interaction.user not in [self.attacker, self.defender]:
+            return
+
+        if len(self.confirmed_users) < 2:
+            await interaction.response.edit_message(embed=self.build_embed(), view=self)
+            return
+
+        guild_id_int = int(self.guild_id)
+        atk_inv = self.bot.db.get_inventory(guild_id_int, self.attacker.id)
+        def_inv = self.bot.db.get_inventory(guild_id_int, self.defender.id)
+
+        if atk_inv.count(self.atk_bird) < self.atk_count or def_inv.count(self.def_bird) < self.def_count:
+            await interaction.response.send_message("❌ Fight failed! One player no longer has enough of their wager.", ephemeral=True)
+            try:
+                await interaction.message.edit(content="❌ Fight failed — a player's wager was no longer available.", embed=None, view=None)
+            except Exception:
+                pass
+            self.stop()
+            return
+
+        attacker_wins = random.random() < self.p_atk
+
+        if attacker_wins:
+            winner, loser = self.attacker, self.defender
+        else:
+            winner, loser = self.defender, self.attacker
+
+        powerups_cog = self.bot.get_cog("PowerupsCog")
+        shield_saved = False
+        if powerups_cog and powerups_cog.consume_shield(guild_id_int, loser.id):
+            shield_saved = True
+        else:
+            if attacker_wins:
+                def_inv = remove_birds(def_inv, self.def_bird, self.def_count)
+                atk_inv.extend([self.def_bird] * self.def_count)
+            else:
+                atk_inv = remove_birds(atk_inv, self.atk_bird, self.atk_count)
+                def_inv.extend([self.atk_bird] * self.atk_count)
+
+        self.bot.db.save_inventory(guild_id_int, self.attacker.id, atk_inv)
+        self.bot.db.save_inventory(guild_id_int, self.defender.id, def_inv)
+
+        loot = ""
+        if powerups_cog:
+            drop = powerups_cog.random_drop()
+            if drop:
+                powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
+                loot = f"\n🎁 **{winner.name}** looted a powerup: {powerups_cog.POWERUPS[drop]['name']}!"
+
+        atk_val = self._worth(self.atk_bird, self.atk_count)
+        def_val = self._worth(self.def_bird, self.def_count)
+        bar, pct_atk, pct_def = self.odds_bar()
+
+        result_lines = []
+        if shield_saved:
+            result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
+        else:
+            result_lines.append(f"💥 **{winner.mention}** won the fight and took home the pot!")
+        result_lines.append(f"📉 **{loser.name}** lost their wager..." if not shield_saved else f"📉 **{loser.name}** lost the fight but kept their birds!")
+        if loot:
+            result_lines.append(loot)
+
+        embed = discord.Embed(
+            title="⚔️ Fight Over!",
+            description=(
+                f"🔵 **{self.attacker.name}** (`{self.atk_count}x {self.atk_bird}`, worth `{atk_val}`)  vs  "
+                f"🟢 **{self.defender.name}** (`{self.def_count}x {self.def_bird}`, worth `{def_val}`)\n\n"
+                f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
+                + "\n".join(result_lines)
+            ),
+            color=discord.Color.green() if winner == self.attacker else discord.Color.blurple()
+        )
+        await interaction.response.edit_message(content=None, embed=embed, view=None)
+        self.stop()
+
+
 class FightView(discord.ui.View):
     def __init__(self, bot, attacker, defender, guild_id, atk_bird, atk_count):
         super().__init__(timeout=120)
@@ -111,11 +259,11 @@ class FightView(discord.ui.View):
             f"⚔️ **Bird Fight!**\n\n"
             f"🔵 **{self.attacker.name}** wagers: `{atk_count}x {atk_bird}`\n"
             f"🟢 **{self.defender.name}** wagers: {def_str}\n\n"
-            f"Both players choose their birds, then press **Fight!**"
+            f"⚔️ The defender picks a bird, then press **Proceed to Battle** to see the odds and confirm!"
         )
 
-    @discord.ui.button(label="Fight!", style=discord.ButtonStyle.green, row=2)
-    async def fight(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="⚔️ Proceed to Battle", style=discord.ButtonStyle.blurple, row=2)
+    async def proceed(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user not in [self.attacker, self.defender]:
             await interaction.response.send_message("❌ You are not part of this fight!", ephemeral=True)
             return
@@ -124,80 +272,19 @@ class FightView(discord.ui.View):
             await interaction.response.send_message("❌ The defender must pick their bird first!", ephemeral=True)
             return
 
-        guild_id_int = int(self.guild_id)
-        atk_bird, atk_count = self.attacker_offer
         def_bird, def_count = self.defender_offer
-
-        atk_inv = self.bot.db.get_inventory(guild_id_int, self.attacker.id)
-        def_inv = self.bot.db.get_inventory(guild_id_int, self.defender.id)
-
-        if atk_inv.count(atk_bird) < atk_count:
-            await interaction.response.send_message("❌ The challenger no longer has enough of their bird!", ephemeral=True)
-            return
-        if def_inv.count(def_bird) < def_count:
-            await interaction.response.send_message("❌ The defender no longer has enough of their bird!", ephemeral=True)
-            return
+        atk_bird, atk_count = self.attacker_offer
 
         atk_val = self.bot.bird_values.get(atk_bird, 1) * atk_count
         def_val = self.bot.bird_values.get(def_bird, 1) * def_count
         total = atk_val + def_val
         p_atk = atk_val / total if total > 0 else 0.5
 
-        attacker_wins = random.random() < p_atk
-
-        powerups_cog = self.bot.get_cog("PowerupsCog")
-        if attacker_wins:
-            winner, loser = self.attacker, self.defender
-        else:
-            winner, loser = self.defender, self.attacker
-
-        shield_saved = False
-        if powerups_cog and powerups_cog.consume_shield(guild_id_int, loser.id):
-            shield_saved = True
-        else:
-            if attacker_wins:
-                def_inv = remove_birds(def_inv, def_bird, def_count)
-                atk_inv.extend([def_bird] * def_count)
-            else:
-                atk_inv = remove_birds(atk_inv, atk_bird, atk_count)
-                def_inv.extend([atk_bird] * atk_count)
-
-        self.bot.db.save_inventory(guild_id_int, self.attacker.id, atk_inv)
-        self.bot.db.save_inventory(guild_id_int, self.defender.id, def_inv)
-
-        loot = ""
-        if powerups_cog:
-            drop = powerups_cog.random_drop()
-            if drop:
-                powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
-                loot = f"\n🎁 **{winner.name}** looted a powerup: {powerups_cog.POWERUPS[drop]['name']}!"
-
-        pct_atk = max(0.01, min(99.99, p_atk * 100))
-        pct_def = round(100 - pct_atk, 2)
-
-        result_lines = []
-        if shield_saved:
-            result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
-        else:
-            result_lines.append(f"💥 **{winner.mention}** won the fight and took home the pot!")
-        result_lines.append(f"📉 **{loser.name}** lost their wager..." if not shield_saved else f"📉 **{loser.name}** lost the fight but kept their birds!")
-        result_lines.append(loot)
-
-        embed = discord.Embed(
-            title="⚔️ Fight Over!",
-            description=(
-                f"🔵 **{self.attacker.name}** (`{atk_count}x {atk_bird}`, worth `{atk_val}`)  vs  "
-                f"🟢 **{self.defender.name}** (`{def_count}x {def_bird}`, worth `{def_val}`)\n\n"
-                + "\n".join(result_lines)
-            ),
-            color=discord.Color.green() if winner == self.attacker else discord.Color.blurple()
+        view = FightConfirmView(
+            self.bot, self.attacker, self.defender, self.guild_id,
+            atk_bird, atk_count, def_bird, def_count, p_atk
         )
-        embed.add_field(
-            name="🎲 Odds",
-            value=f"{self.attacker.name}: `{pct_atk:.2f}%` | {self.defender.name}: `{pct_def:.2f}%`"
-        )
-        await interaction.response.edit_message(content=None, embed=embed, view=None)
-        self.stop()
+        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
 
     @discord.ui.button(label="Cancel Fight", style=discord.ButtonStyle.red, row=2)
     async def cancel_fight(self, interaction: discord.Interaction, button: discord.ui.Button):
