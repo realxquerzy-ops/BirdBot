@@ -117,6 +117,7 @@ RESOURCE_GUILD_IDS = [
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.presences = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event

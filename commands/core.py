@@ -13,6 +13,8 @@ class CoreCog(commands.Cog):
         self.bot = bot
         if not hasattr(self.bot, "fastest_times"):
             self.bot.fastest_times = {}
+        if not hasattr(self.bot, "last_active"):
+            self.bot.last_active = {}
         self.spawn_weights = [float(bird["weight"]) for bird in self.bot.birds]
         self.next_spawn_times = {}
         self.bird_spawner.start()
@@ -85,6 +87,8 @@ class CoreCog(commands.Cog):
     async def on_message(self, message):
         if message.author.bot:
             return
+
+        self.bot.last_active[message.author.id] = time.time()
 
         content_lower = message.content.lower().strip()
         user_id = str(message.author.id)

@@ -66,6 +66,21 @@ def survival_rate(elapsed):
     return max(0.25, 1.0 - elapsed / 60.0)
 
 
+STATUS_TEXT = {
+    discord.Status.online: "🟢 online",
+    discord.Status.idle: "🌙 idle (AFK)",
+    discord.Status.dnd: "🔴 do not disturb",
+    discord.Status.offline: "⚫ offline",
+    discord.Status.invisible: "⚫ invisible",
+}
+
+
+def is_active(bot, member):
+    if member.status in (discord.Status.online, discord.Status.dnd):
+        return True
+    return time.time() - bot.last_active.get(member.id, 0) <= 120
+
+
 def attack_roll(bot, atk_commit):
     total = commit_value(bot, atk_commit)
     chance = min(0.90, 0.30 + total / 40.0)
@@ -539,6 +554,15 @@ class FightCog(commands.Cog):
 
             if member.bot or member == interaction.user:
                 await interaction.followup.send("❌ You cannot battle bots or yourself!", ephemeral=True)
+                return
+
+            if not is_active(self.bot, member):
+                status_txt = STATUS_TEXT.get(member.status, member.status)
+                await interaction.followup.send(
+                    f"❌ **{member.display_name}** is **{status_txt}** and not active right now! "
+                    f"You can only battle active users.",
+                    ephemeral=True
+                )
                 return
 
             guild_id = interaction.guild.id
