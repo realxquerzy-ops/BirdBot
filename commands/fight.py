@@ -1,3 +1,4 @@
+import asyncio
 import random
 import time
 from collections import Counter
@@ -233,15 +234,33 @@ class FightSetupView(discord.ui.View):
 
 class FightChallengeView(discord.ui.View):
     def __init__(self, bot, attacker, defender, guild_id, atk_commit):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)
         self.bot = bot
         self.attacker = attacker
         self.defender = defender
         self.guild_id = str(guild_id)
         self.atk_commit = atk_commit
+        self._resolving = False
+        self._deadline = time.time() + 60
+        self._timer_task = asyncio.create_task(self._countdown())
 
-    def build_embed(self):
+    def stop(self):
+        if getattr(self, "_resolving", False):
+            super().stop()
+            return
+        task = getattr(self, "_timer_task", None)
+        if task and not task.done():
+            task.cancel()
+        super().stop()
+
+    def build_embed(self, remaining=None):
         val = commit_value(self.bot, self.atk_commit)
+        timer_line = ""
+        if remaining is not None:
+            timer_line = (
+                f"\n⏳ **{self.defender.name}** has `{max(0, int(remaining))}s` to respond!\n"
+                f"💤 If time runs out, it counts as **Ignore** and the attacker may strike!"
+            )
         return discord.Embed(
             title="⚔️ Battle Challenge!",
             description=(
@@ -250,31 +269,32 @@ class FightChallengeView(discord.ui.View):
                 f"**{self.defender.name}**, choose:\n"
                 f"⚔️ **Fight Back** — send your own birds into battle\n"
                 f"🕶️ **Ignore** — refuse the fight (the attacker may still strike!)"
+                f"{timer_line}"
             ),
             color=discord.Color.blurple()
         )
 
-    @discord.ui.button(label="⚔️ Fight Back", style=discord.ButtonStyle.green, row=0)
-    async def fight_back(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.defender.id:
-            await interaction.response.send_message("❌ Only the challenged player can respond!", ephemeral=True)
-            return
+    async def _countdown(self):
+        try:
+            while not self.is_finished():
+                remaining = self._deadline - time.time()
+                if remaining <= 0:
+                    self._resolving = True
+                    await self._resolve_ignore()
+                    return
+                msg = getattr(self, "_expiry_msg", None) or self.message
+                if msg:
+                    try:
+                        await msg.edit(embed=self.build_embed(remaining))
+                    except Exception:
+                        pass
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
-        def_inv = self.bot.db.get_inventory(int(self.guild_id), self.defender.id)
-        if not def_inv:
-            await interaction.response.send_message("❌ You don't have any birds to fight with!", ephemeral=True)
-            return
-
-        view = FightLiveView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit))
-        view._expiry_msg = interaction.message
-        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
-
-    @discord.ui.button(label="🕶️ Ignore", style=discord.ButtonStyle.grey, row=1)
-    async def ignore(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.defender.id:
-            await interaction.response.send_message("❌ Only the challenged player can respond!", ephemeral=True)
-            return
-
+    async def _resolve_ignore(self, interaction=None):
         chance, steal_num = attack_roll(self.bot, self.atk_commit)
         guild_id_int = int(self.guild_id)
 
@@ -287,8 +307,7 @@ class FightChallengeView(discord.ui.View):
                 ),
                 color=discord.Color.greyple()
             )
-            await interaction.response.edit_message(content=None, embed=embed, view=None)
-            self.stop()
+            await self._finish(embed, interaction)
             return
 
         def_inv = self.bot.db.get_inventory(guild_id_int, self.defender.id)
@@ -300,8 +319,7 @@ class FightChallengeView(discord.ui.View):
                 description=f"**{self.attacker.name}** attacked but **{self.defender.name}** had no birds to steal!",
                 color=discord.Color.greyple()
             )
-            await interaction.response.edit_message(content=None, embed=embed, view=None)
-            self.stop()
+            await self._finish(embed, interaction)
             return
 
         moved = transfer_birds(self.bot, guild_id_int, self.defender.id, self.attacker.id, stolen)
@@ -321,16 +339,46 @@ class FightChallengeView(discord.ui.View):
                 description=f"**{self.attacker.name}** attacked but found nothing left to steal!",
                 color=discord.Color.greyple()
             )
-        await interaction.response.edit_message(content=None, embed=embed, view=None)
-        self.stop()
+        await self._finish(embed, interaction)
 
-    async def on_timeout(self):
+    async def _finish(self, embed, interaction=None):
+        if interaction is not None and not interaction.response.is_done():
+            try:
+                await interaction.response.edit_message(content=None, embed=embed, view=None)
+                self.stop()
+                return
+            except Exception:
+                pass
         msg = getattr(self, "_expiry_msg", None) or self.message
         if msg:
             try:
-                await msg.edit(content="⏰ The challenge expired.", embed=None, view=None)
+                await msg.edit(content=None, embed=embed, view=None)
             except Exception:
                 pass
+        self.stop()
+
+    @discord.ui.button(label="⚔️ Fight Back", style=discord.ButtonStyle.green, row=0)
+    async def fight_back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.defender.id:
+            await interaction.response.send_message("❌ Only the challenged player can respond!", ephemeral=True)
+            return
+
+        def_inv = self.bot.db.get_inventory(int(self.guild_id), self.defender.id)
+        if not def_inv:
+            await interaction.response.send_message("❌ You don't have any birds to fight with!", ephemeral=True)
+            return
+
+        view = FightLiveView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit))
+        view._expiry_msg = interaction.message
+        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+        self.stop()
+
+    @discord.ui.button(label="🕶️ Ignore", style=discord.ButtonStyle.grey, row=1)
+    async def ignore(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.defender.id:
+            await interaction.response.send_message("❌ Only the challenged player can respond!", ephemeral=True)
+            return
+        await self._resolve_ignore(interaction)
 
 
 class FightLiveView(discord.ui.View):
