@@ -991,13 +991,28 @@ class FightCog(commands.Cog):
                 await interaction.followup.send("❌ You don't have any birds to battle with!", ephemeral=True)
                 return
 
-            view = FightSetupView(self.bot, interaction.user, member, str(guild_id))
-            msg = await interaction.followup.send(
-                content=f"⚔️ **{interaction.user.mention}** is preparing a battle against **{member.mention}**!",
-                embed=view.build_embed(),
-                view=view
-            )
-            view._expiry_msg = msg
+            try:
+                view = FightSetupView(self.bot, interaction.user, member, str(guild_id))
+            except Exception as e:
+                print(f"[fight] FightSetupView init error: {e}")
+                import traceback
+                traceback.print_exc()
+                await interaction.followup.send(f"❌ Setup error: {e}", ephemeral=True)
+                return
+            
+            try:
+                msg = await interaction.followup.send(
+                    content=f"⚔️ **{interaction.user.mention}** is preparing a battle against **{member.mention}**!",
+                    embed=view.build_embed(),
+                    view=view
+                )
+                view._expiry_msg = msg
+            except Exception as e:
+                print(f"[fight] followup send error: {e}")
+                import traceback
+                traceback.print_exc()
+                await interaction.followup.send(f"❌ Send error: {e}", ephemeral=True)
+                return
         except Exception as e:
             print(f"Error in fight command: {e}")
             await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
