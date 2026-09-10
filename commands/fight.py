@@ -77,7 +77,9 @@ STATUS_TEXT = {
 
 
 def is_active(bot, member):
-    if member.status in (discord.Status.online, discord.Status.dnd):
+    # Use real-time presence cache first, fall back to member.status
+    status = bot.presence_cache.get(member.id, member.status)
+    if status in (discord.Status.online, discord.Status.dnd):
         return True
     return time.time() - bot.last_active.get(member.id, 0) <= 120
 
@@ -605,7 +607,9 @@ class FightCog(commands.Cog):
                 return
 
             if not is_active(self.bot, member):
-                status_txt = STATUS_TEXT.get(member.status, member.status)
+                # Use real-time cache for display
+                real_status = self.bot.presence_cache.get(member.id, member.status)
+                status_txt = STATUS_TEXT.get(real_status, real_status)
                 await interaction.followup.send(
                     f"❌ **{member.display_name}** is **{status_txt}** and not active right now! "
                     f"You can only battle active users.",
