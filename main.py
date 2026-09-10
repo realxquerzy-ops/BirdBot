@@ -137,6 +137,14 @@ async def on_ready():
 
     for guild in bot.guilds:
         print(f"[debug] guild={guild.name!r} members=<{len(guild.members)}>")
+    
+    # Initialize presence cache with current member statuses
+    count = 0
+    for member in bot.get_all_members():
+        bot.presence_cache[member.id] = member.status
+        count += 1
+    print(f"[debug] presence_cache initialized with {count} members")
+    
     for member in bot.get_all_members():
         if member.id in bot.whitelisted_users:
             print(f"[debug] owner {member} status={member.status}")
