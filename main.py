@@ -122,8 +122,14 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
+async def on_presence_update(before, after):
+    if before.status != after.status:
+        print(f"[presence] {after} ({after.id}) -> {after.status}")
+
+@bot.event
 async def on_ready():
     print(f"{bot.user} olarak giriş yapıldı ve PostgreSQL aktif!")
+    print(f"[debug] intents: presences={bot.intents.presences} members={bot.intents.members} message_content={bot.intents.message_content}")
 
     for guild in bot.guilds:
         print(f"[debug] guild={guild.name!r} members=<{len(guild.members)}>")
