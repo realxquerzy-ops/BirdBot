@@ -315,6 +315,12 @@ class FightChallengeView(discord.ui.View):
                 ),
                 color=discord.Color.greyple()
             )
+            # Log: attacker lost
+            try:
+                self.bot.db.log_battle(guild_id_int, self.attacker.id, self.defender.id, self.defender.id,
+                    dict(self.atk_commit), {}, {})
+            except Exception as e:
+                print(f"[battle-log] Failed to log battle: {e}")
             await self._finish(embed, interaction)
             return
 
@@ -327,6 +333,12 @@ class FightChallengeView(discord.ui.View):
                 description=f"**{self.attacker.name}** attacked but **{self.defender.name}** had no birds to steal!",
                 color=discord.Color.greyple()
             )
+            # Log: attacker lost (no birds to steal)
+            try:
+                self.bot.db.log_battle(guild_id_int, self.attacker.id, self.defender.id, self.defender.id,
+                    dict(self.atk_commit), {}, {})
+            except Exception as e:
+                print(f"[battle-log] Failed to log battle: {e}")
             await self._finish(embed, interaction)
             return
 
@@ -347,6 +359,13 @@ class FightChallengeView(discord.ui.View):
                 description=f"**{self.attacker.name}** attacked but found nothing left to steal!",
                 color=discord.Color.greyple()
             )
+        
+        # Log: attacker won
+        try:
+            self.bot.db.log_battle(guild_id_int, self.attacker.id, self.defender.id, self.attacker.id,
+                dict(self.atk_commit), {}, dict(Counter(moved)))
+        except Exception as e:
+            print(f"[battle-log] Failed to log battle: {e}")
         await self._finish(embed, interaction)
 
     async def _finish(self, embed, interaction=None):
@@ -666,6 +685,16 @@ class AutoBattleView(discord.ui.View):
                 await interaction.message.edit(embed=embed, view=None)
             except:
                 pass
+        
+        # Log battle
+        try:
+            self.bot.db.log_battle(
+                guild_id_int, attacker.id, defender.id, winner.id,
+                dict(attacker_commit), dict(defender_commit), dict(Counter(taken))
+            )
+        except Exception as e:
+            print(f"[battle-log] Failed to log battle: {e}")
+        
         return winner, attacker_wins, taken
 
     async def _start_extension_phase(self, interaction):
@@ -972,6 +1001,104 @@ class FightCog(commands.Cog):
         except Exception as e:
             print(f"Error in fight command: {e}")
             await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
+
+
+@discord.app_commands.command(name="battlelog", description="View your recent battle history")
+    @discord.app_commands.describe(member="User to check (defaults to yourself)")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def battlelog(self, interaction: discord.Interaction, member: discord.Member = None):
+        await interaction.response.defer()
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        target = member or interaction.user
+        guild_id = interaction.guild.id
+        
+        battles = self.bot.db.get_battle_log(guild_id, target.id, limit=10)
+        
+        if not battles:
+            await interaction.followup.send(f"📜 **{target.display_name}** has no battle history yet.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title=f"⚔️ Battle Log — {target.display_name}",
+            color=discord.Color.dark_red()
+        )
+        
+        for i, row in enumerate(battles, 1):
+            attacker_id, defender_id, winner_id, atk_birds_json, def_birds_json, stolen_birds_json, created_at = row
+            import json
+            atk_birds = json.loads(atk_birds_json) if atk_birds_json else {}
+            def_birds = json.loads(def_birds_json) if def_birds_json else {}
+            stolen_birds = json.loads(stolen_birds_json) if stolen_birds_json else {}
+            
+            is_attacker = attacker_id == target.id
+            opponent_id = defender_id if is_attacker else attacker_id
+            won = winner_id == target.id
+            
+            try:
+                opponent = interaction.guild.get_member(opponent_id)
+                opponent_name = opponent.display_name if opponent else f"User {opponent_id}"
+            except:
+                opponent_name = f"User {opponent_id}"
+            
+            role = "Attacker" if is_attacker else "Defender"
+            result = "🟢 **WON**" if won else "🔴 **LOST**"
+            birds_str = fmt_commit(atk_birds) if is_attacker else fmt_commit(def_birds)
+            stolen_str = fmt_commit(stolen_birds) if stolen_birds else "None"
+            
+            embed.add_field(
+                name=f"{i}. vs {opponent_name} ({role}) — {result}",
+                value=f"Your birds: {birds_str}\nStolen: {stolen_str}\n{created_at.strftime('%Y-%m-%d %H:%M')}",
+                inline=False
+            )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @discord.app_commands.command(name="winrate", description="View your battle win rate")
+    @discord.app_commands.describe(member="User to check (defaults to yourself)")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def winrate(self, interaction: discord.Interaction, member: discord.Member = None):
+        await interaction.response.defer()
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        
+        target = member or interaction.user
+        guild_id = interaction.guild.id
+        
+        stats = self.bot.db.get_winrate(guild_id, target.id)
+        
+        if stats["total"] == 0:
+            await interaction.followup.send(f"📊 **{target.display_name}** has no battles recorded yet.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title=f"📊 Win Rate — {target.display_name}",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name="Total Battles", value=str(stats["total"]), inline=True)
+        embed.add_field(name="Wins", value=str(stats["wins"]), inline=True)
+        embed.add_field(name="Losses", value=str(stats["total"] - stats["wins"]), inline=True)
+        embed.add_field(name="Win Rate", value=f"{stats['rate']:.1f}%", inline=True)
+        
+        # Rank emoji based on winrate
+        if stats["rate"] >= 70:
+            rank = "🏆 Champion"
+        elif stats["rate"] >= 55:
+            rank = "🥇 Veteran"
+        elif stats["rate"] >= 40:
+            rank = "⚔️ Fighter"
+        elif stats["rate"] >= 25:
+            rank = "🛡️ Novice"
+        else:
+            rank = "🐣 Rookie"
+        embed.add_field(name="Rank", value=rank, inline=True)
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot):
