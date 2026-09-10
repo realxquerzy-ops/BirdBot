@@ -5,24 +5,64 @@ import discord
 from discord.ext import commands
 
 
-def remove_birds(inventory, bird, count):
-    remaining = []
-    removed = 0
-    for b in inventory:
-        if b == bird and removed < count:
-            removed += 1
-        else:
-            remaining.append(b)
-    return remaining
+def commit_value(bot, commit):
+    return sum(bot.bird_values.get(b, 1) * n for b, n in commit.items())
 
 
-class FightQuantityModal(discord.ui.Modal):
+def fmt_commit(commit):
+    if not commit:
+        return "None yet"
+    return ", ".join(f"{n}x {b}" for b, n in sorted(commit.items()))
+
+
+def transfer_birds(bot, guild_id, from_user, to_user, birds_list):
+    src = bot.db.get_inventory(guild_id, from_user)
+    dst = bot.db.get_inventory(guild_id, to_user)
+    moved = []
+    for b in birds_list:
+        if b in src:
+            src.remove(b)
+            dst.append(b)
+            moved.append(b)
+    if moved:
+        bot.db.save_inventory(guild_id, from_user, src)
+        bot.db.save_inventory(guild_id, to_user, dst)
+    return moved
+
+
+def weighted_pick(inventory, k, bot):
+    counts = Counter(inventory)
+    birds = list(counts.keys())
+    if not birds:
+        return []
+
+    weights = [1.0 / max(bot.bird_values.get(b, 1), 0.001) for b in birds]
+    chosen = []
+    remaining = list(birds)
+    rem_w = list(weights)
+
+    for _ in range(min(k, len(remaining))):
+        idx = random.choices(range(len(remaining)), weights=rem_w, k=1)[0]
+        chosen.append(remaining[idx])
+        remaining.pop(idx)
+        rem_w.pop(idx)
+    return chosen
+
+
+def attack_roll(bot, atk_commit):
+    total = commit_value(bot, atk_commit)
+    chance = min(0.90, 0.30 + total / 40.0)
+    steal_num = 1 + (1 if total >= 8 else 0) + (1 if total >= 40 else 0)
+    return chance, min(steal_num, 3)
+
+
+class FightAddModal(discord.ui.Modal):
     def __init__(self, select_item, view_instance):
-        super().__init__(title="Select Bird Count")
+        super().__init__(title="Send Birds to Battle")
         self.select_item = select_item
         self.view_instance = view_instance
         self.count_input = discord.ui.TextInput(
-            label="How many of this bird are you wagering?",
+            label="How many?",
             placeholder="Enter a number...",
             min_length=1,
             max_length=3,
@@ -32,32 +72,39 @@ class FightQuantityModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         view = self.view_instance
-        if interaction.user.id != view.defender.id:
-            await interaction.response.send_message("❌ Only the challenged user can pick birds!", ephemeral=True)
+        owner_id = self.select_item.owner_id
+        if interaction.user.id != owner_id:
+            await interaction.response.send_message("❌ You cannot send the other player's birds!", ephemeral=True)
             return
+
+        bird = self.select_item.selected_bird
+        committed = view.commit[owner_id]
+        pool = view.max_pool[owner_id]
+        max_allowed = pool.get(bird, 0) - committed.get(bird, 0)
 
         try:
-            count = int(self.count_input.value)
-            if count < 1 or count > view.target_birds.count(self.select_item.selected_bird):
+            val = int(self.count_input.value)
+            if val < 1 or val > max_allowed:
                 raise ValueError()
         except ValueError:
-            await interaction.response.send_message("❌ Please enter a valid number for this bird!", ephemeral=True)
+            await interaction.response.send_message(
+                f"❌ You can send up to `{max_allowed}` of this bird.", ephemeral=True
+            )
             return
 
-        view.set_defender_offer(self.select_item.selected_bird, count)
-        await interaction.response.edit_message(content=view.status_text(), view=view)
+        committed[bird] = committed.get(bird, 0) + val
+        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
 
 
-class FightSelect(discord.ui.Select):
-    def __init__(self, user_birds, owner_id, bird_values):
+class FightAddSelect(discord.ui.Select):
+    def __init__(self, user_birds, owner_id, bird_values, placeholder, row=0):
         self.owner_id = owner_id
-        self.bird_values = bird_values
         counts = Counter(user_birds)
 
         options = [
             discord.SelectOption(
                 label=bird,
-                description=f"Value: {bird_values.get(bird.lower(), 1)} | Available: {counts[bird]}"
+                description=f"Value: {bird_values.get(bird.lower(), 1)} | Owned: {counts[bird]}"
             )
             for bird in list(counts.keys())[:25]
         ]
@@ -65,161 +112,332 @@ class FightSelect(discord.ui.Select):
         if not options:
             options = [discord.SelectOption(label="No birds available", description="You have no birds")]
 
-        super().__init__(placeholder="Choose your bird for the fight...", min_values=1, max_values=1, options=options)
+        super().__init__(placeholder=placeholder, options=options, row=row)
         self.selected_bird = None
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("❌ You cannot pick the other user's bird!", ephemeral=True)
+            await interaction.response.send_message("❌ You cannot send the other player's birds!", ephemeral=True)
             return
 
         if self.values[0] == "No birds available":
-            await interaction.response.send_message("❌ You don't have any birds to fight with!", ephemeral=True)
+            await interaction.response.send_message("❌ You don't have any birds to send!", ephemeral=True)
             return
 
         self.selected_bird = self.values[0]
-        await interaction.response.send_modal(FightQuantityModal(self, self.view))
+        await interaction.response.send_modal(FightAddModal(self, self.view))
 
 
-class FightConfirmView(discord.ui.View):
-    def __init__(self, bot, attacker, defender, guild_id, atk_bird, atk_count, def_bird, def_count, p_atk):
+class FightSetupView(discord.ui.View):
+    def __init__(self, bot, attacker, target, guild_id):
+        super().__init__(timeout=60)
+        self.bot = bot
+        self.attacker = attacker
+        self.target = target
+        self.guild_id = str(guild_id)
+
+        inv = bot.db.get_inventory(int(guild_id), attacker.id)
+        self.max_pool = {attacker.id: Counter(inv)}
+        self.commit = {attacker.id: Counter()}
+
+        bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
+        self.add_select = FightAddSelect(inv, attacker.id, bird_values, f"{attacker.name}: Send birds to battle", row=0)
+        self.add_item(self.add_select)
+
+    def build_embed(self):
+        commit = self.commit[self.attacker.id]
+        val = commit_value(self.bot, commit)
+        embed = discord.Embed(
+            title="⚔️ Challenge Setup",
+            description=(
+                f"🔵 **{self.attacker.name}** commits to battle: **{fmt_commit(commit)}**\n"
+                f"💪 Total battle power: `{int(val)}`\n\n"
+                f"Select birds to send for the fight, then press **⚔️ Challenge!**"
+            ),
+            color=discord.Color.blurple()
+        )
+        embed.set_footer(text="You can only send birds you actually own.")
+        return embed
+
+    @discord.ui.button(label="⚔️ Challenge!", style=discord.ButtonStyle.green, row=2)
+    async def challenge(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.attacker.id:
+            await interaction.response.send_message("❌ Only the challenger can send the challenge!", ephemeral=True)
+            return
+
+        if not self.commit[self.attacker.id]:
+            await interaction.response.send_message("❌ Send at least one bird to battle first!", ephemeral=True)
+            return
+
+        view = FightChallengeView(self.bot, self.attacker, self.target, self.guild_id, dict(self.commit[self.attacker.id]))
+        view._expiry_msg = await interaction.channel.send(
+            content=f"⚔️ **{self.attacker.mention}** has challenged **{self.target.mention}** to a battle!",
+            embed=view.build_embed(),
+            view=view
+        )
+        await interaction.response.edit_message(embed=discord.Embed(
+            title="📨 Challenge Sent!",
+            description=f"**{self.attacker.name}** sent a battle challenge to **{self.target.name}**!",
+            color=discord.Color.green()
+        ), view=None)
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red, row=2)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.attacker.id:
+            await interaction.response.send_message("❌ Only the challenger can cancel!", ephemeral=True)
+            return
+        await interaction.response.edit_message(content="❌ Challenge cancelled.", embed=None, view=None)
+        self.stop()
+
+    async def on_timeout(self):
+        msg = getattr(self, "_expiry_msg", None) or self.message
+        if msg:
+            try:
+                await msg.edit(content="⏰ Challenge setup expired.", embed=None, view=None)
+            except Exception:
+                pass
+
+
+class FightChallengeView(discord.ui.View):
+    def __init__(self, bot, attacker, defender, guild_id, atk_commit):
+        super().__init__(timeout=60)
+        self.bot = bot
+        self.attacker = attacker
+        self.defender = defender
+        self.guild_id = str(guild_id)
+        self.atk_commit = atk_commit
+
+    def build_embed(self):
+        val = commit_value(self.bot, self.atk_commit)
+        return discord.Embed(
+            title="⚔️ Battle Challenge!",
+            description=(
+                f"🔵 **{self.attacker.name}** is attacking with: **{fmt_commit(self.atk_commit)}**\n"
+                f"💪 Total battle power: `{int(val)}`\n\n"
+                f"**{self.defender.name}**, choose:\n"
+                f"⚔️ **Fight Back** — send your own birds into battle\n"
+                f"🕶️ **Ignore** — refuse the fight (the attacker may still strike!)"
+            ),
+            color=discord.Color.blurple()
+        )
+
+    @discord.ui.button(label="⚔️ Fight Back", style=discord.ButtonStyle.green, row=0)
+    async def fight_back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.defender.id:
+            await interaction.response.send_message("❌ Only the challenged player can respond!", ephemeral=True)
+            return
+
+        def_inv = self.bot.db.get_inventory(int(self.guild_id), self.defender.id)
+        if not def_inv:
+            await interaction.response.send_message("❌ You don't have any birds to fight with!", ephemeral=True)
+            return
+
+        view = FightLiveView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit))
+        view._expiry_msg = interaction.message
+        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+
+    @discord.ui.button(label="🕶️ Ignore", style=discord.ButtonStyle.grey, row=1)
+    async def ignore(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.defender.id:
+            await interaction.response.send_message("❌ Only the challenged player can respond!", ephemeral=True)
+            return
+
+        chance, steal_num = attack_roll(self.bot, self.atk_commit)
+        guild_id_int = int(self.guild_id)
+
+        if random.random() > chance:
+            embed = discord.Embed(
+                title="🕶️ Attack Missed!",
+                description=(
+                    f"**{self.attacker.name}** tried to strike **{self.defender.name}** "
+                    f"but they dodged the attack! Nothing was stolen."
+                ),
+                color=discord.Color.greyple()
+            )
+            await interaction.response.edit_message(content=None, embed=embed, view=None)
+            self.stop()
+            return
+
+        def_inv = self.bot.db.get_inventory(guild_id_int, self.defender.id)
+        stolen = weighted_pick(def_inv, steal_num, self.bot)
+
+        if not stolen:
+            embed = discord.Embed(
+                title="🕶️ Attack Missed!",
+                description=f"**{self.attacker.name}** attacked but **{self.defender.name}** had no birds to steal!",
+                color=discord.Color.greyple()
+            )
+            await interaction.response.edit_message(content=None, embed=embed, view=None)
+            self.stop()
+            return
+
+        moved = transfer_birds(self.bot, guild_id_int, self.defender.id, self.attacker.id, stolen)
+
+        if moved:
+            embed = discord.Embed(
+                title="⚔️ Raid Successful!",
+                description=(
+                    f"**{self.attacker.name}** ignored their refusal and raided **{self.defender.name}**!\n"
+                    f"🕵️ Stolen: **{fmt_commit(Counter(moved))}**"
+                ),
+                color=discord.Color.orange()
+            )
+        else:
+            embed = discord.Embed(
+                title="🕶️ Attack Missed!",
+                description=f"**{self.attacker.name}** attacked but found nothing left to steal!",
+                color=discord.Color.greyple()
+            )
+        await interaction.response.edit_message(content=None, embed=embed, view=None)
+        self.stop()
+
+    async def on_timeout(self):
+        msg = getattr(self, "_expiry_msg", None) or self.message
+        if msg:
+            try:
+                await msg.edit(content="⏰ The challenge expired.", embed=None, view=None)
+            except Exception:
+                pass
+
+
+class FightLiveView(discord.ui.View):
+    def __init__(self, bot, attacker, defender, guild_id, atk_commit):
         super().__init__(timeout=120)
         self.bot = bot
         self.attacker = attacker
         self.defender = defender
         self.guild_id = str(guild_id)
-        self.atk_bird = atk_bird
-        self.atk_count = atk_count
-        self.def_bird = def_bird
-        self.def_count = def_count
-        self.p_atk = p_atk
         self.confirmed_users = set()
 
-    def _worth(self, bird, count):
-        return int(self.bot.bird_values.get(bird, 1) * count)
+        att_inv = bot.db.get_inventory(int(guild_id), attacker.id)
+        def_inv = bot.db.get_inventory(int(guild_id), defender.id)
 
-    def odds_bar(self):
-        pct_atk = max(0.01, min(99.99, self.p_atk * 100))
+        self.max_pool = {attacker.id: Counter(att_inv), defender.id: Counter(def_inv)}
+        self.commit = {attacker.id: Counter(atk_commit), defender.id: Counter()}
+
+        bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
+        self.att_select = FightAddSelect(att_inv, attacker.id, bird_values, f"{attacker.name}: Send more birds", row=0)
+        self.def_select = FightAddSelect(def_inv, defender.id, bird_values, f"{defender.name}: Send birds to battle", row=1)
+        self.add_item(self.att_select)
+        self.add_item(self.def_select)
+
+    def build_embed(self):
+        atk_commit = self.commit[self.attacker.id]
+        def_commit = self.commit[self.defender.id]
+        atk_val = commit_value(self.bot, atk_commit)
+        def_val = commit_value(self.bot, def_commit)
+
+        total = atk_val + def_val
+        p_atk = atk_val / total if total > 0 else 0.5
+        pct_atk = max(0.01, min(99.99, p_atk * 100))
         pct_def = max(0.01, min(99.99, 100 - pct_atk))
+
         atk_blocks = round(10 * pct_atk / 100)
         def_blocks = 10 - atk_blocks
         bar = "🔵" * atk_blocks + "🟢" * def_blocks
-        return bar, pct_atk, pct_def
 
-    def build_embed(self):
-        atk_val = self._worth(self.atk_bird, self.atk_count)
-        def_val = self._worth(self.def_bird, self.def_count)
-        bar, pct_atk, pct_def = self.odds_bar()
         atk_check = "✅" if self.attacker.id in self.confirmed_users else "⏳"
         def_check = "✅" if self.defender.id in self.confirmed_users else "⏳"
 
         embed = discord.Embed(
-            title="⚔️ Final Confirmation",
+            title="⚔️ Live Battle",
             description=(
-                f"🔵 **{self.attacker.name}** wagers `{self.atk_count}x {self.atk_bird}` "
-                f"(worth `{atk_val}`) *({atk_check})*\n"
-                f"🟢 **{self.defender.name}** wagers `{self.def_count}x {self.def_bird}` "
-                f"(worth `{def_val}`) *({def_check})*\n\n"
-                f"🎲 **Win Odds**\n{bar}\n"
-                f"🔵 `{pct_atk:.2f}%` vs 🟢 `{pct_def:.2f}%`\n\n"
-                f"Both players must press **Confirm** to start the fight!"
+                f"🔵 **{self.attacker.name}**: **{fmt_commit(atk_commit)}** (power `{int(atk_val)}`) *({atk_check})*\n"
+                f"🟢 **{self.defender.name}**: **{fmt_commit(def_commit)}** (power `{int(def_val)}`) *({def_check})*\n\n"
+                f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
+                f"Send more birds from the menus, then **both players press ⚔️ Fight!** to battle.\n"
+                f"Or press 🏃 to flee and cut your losses."
             ),
-            color=discord.Color.blurple()
+            color=discord.Color.dark_red()
         )
         return embed
 
-    @discord.ui.button(label="Confirm (Challenger)", style=discord.ButtonStyle.green, row=1)
+    @discord.ui.button(label="⚔️ Fight! (Challenger)", style=discord.ButtonStyle.green, row=2)
     async def confirm_attacker(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.attacker:
-            await interaction.response.send_message("❌ Only the challenger can confirm their wager!", ephemeral=True)
+            await interaction.response.send_message("❌ Only the challenger can confirm!", ephemeral=True)
             return
         self.confirmed_users.add(self.attacker.id)
         await self._after_confirm(interaction)
 
-    @discord.ui.button(label="Confirm (Defender)", style=discord.ButtonStyle.green, row=1)
+    @discord.ui.button(label="⚔️ Fight! (Defender)", style=discord.ButtonStyle.green, row=2)
     async def confirm_defender(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.defender:
-            await interaction.response.send_message("❌ Only the defender can confirm their wager!", ephemeral=True)
+            await interaction.response.send_message("❌ Only the defender can confirm!", ephemeral=True)
             return
         self.confirmed_users.add(self.defender.id)
         await self._after_confirm(interaction)
 
-    @discord.ui.button(label="Cancel Fight", style=discord.ButtonStyle.red, row=2)
-    async def cancel_fight(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user not in [self.attacker, self.defender]:
-            await interaction.response.send_message("❌ You cannot cancel this fight!", ephemeral=True)
-            return
-        await interaction.response.edit_message(content="❌ Fight was cancelled.", embed=None, view=None)
-        self.stop()
-
     async def _after_confirm(self, interaction: discord.Interaction):
-        if interaction.user not in [self.attacker, self.defender]:
+        guild_id_int = int(self.guild_id)
+
+        if not self.commit[self.attacker.id] or not self.commit[self.defender.id]:
+            await interaction.response.send_message("❌ Both players must send at least one bird to battle!", ephemeral=True)
             return
 
         if len(self.confirmed_users) < 2:
-            await interaction.response.edit_message(embed=self.build_embed(), view=self)
+            await interaction.response.edit_message(content=None, embed=self.build_embed(), view=self)
             return
 
+        await self._resolve(interaction)
+
+    async def _resolve(self, interaction: discord.Interaction):
         guild_id_int = int(self.guild_id)
-        atk_inv = self.bot.db.get_inventory(guild_id_int, self.attacker.id)
-        def_inv = self.bot.db.get_inventory(guild_id_int, self.defender.id)
+        atk_commit = self.commit[self.attacker.id]
+        def_commit = self.commit[self.defender.id]
 
-        if atk_inv.count(self.atk_bird) < self.atk_count or def_inv.count(self.def_bird) < self.def_count:
-            await interaction.response.send_message("❌ Fight failed! One player no longer has enough of their wager.", ephemeral=True)
-            try:
-                await interaction.message.edit(content="❌ Fight failed — a player's wager was no longer available.", embed=None, view=None)
-            except Exception:
-                pass
-            self.stop()
-            return
+        atk_val = commit_value(self.bot, atk_commit)
+        def_val = commit_value(self.bot, def_commit)
+        total = atk_val + def_val
+        p_atk = atk_val / total if total > 0 else 0.5
 
-        attacker_wins = random.random() < self.p_atk
+        attacker_wins = random.random() < p_atk
+        winner = self.attacker if attacker_wins else self.defender
+        loser = self.defender if attacker_wins else self.attacker
 
-        if attacker_wins:
-            winner, loser = self.attacker, self.defender
-        else:
-            winner, loser = self.defender, self.attacker
+        loser_commit = dict(atk_commit if attacker_wins else def_commit)
+        winner_side = self.defender if attacker_wins else self.attacker
+
+        pct_atk = max(0.01, min(99.99, p_atk * 100))
+        pct_def = max(0.01, min(99.99, 100 - pct_atk))
+        atk_blocks = round(10 * pct_atk / 100)
+        bar = "🔵" * atk_blocks + "🟢" * (10 - atk_blocks)
 
         powerups_cog = self.bot.get_cog("PowerupsCog")
         shield_saved = False
+        taken = []
+
         if powerups_cog and powerups_cog.consume_shield(guild_id_int, loser.id):
             shield_saved = True
         else:
-            if attacker_wins:
-                def_inv = remove_birds(def_inv, self.def_bird, self.def_count)
-                atk_inv.extend([self.def_bird] * self.def_count)
-            else:
-                atk_inv = remove_birds(atk_inv, self.atk_bird, self.atk_count)
-                def_inv.extend([self.atk_bird] * self.atk_count)
-
-        self.bot.db.save_inventory(guild_id_int, self.attacker.id, atk_inv)
-        self.bot.db.save_inventory(guild_id_int, self.defender.id, def_inv)
+            expanded = []
+            for bird, n in loser_commit.items():
+                expanded.extend([bird] * n)
+            random.shuffle(expanded)
+            half = expanded[: len(expanded) // 2] if expanded else []
+            taken = transfer_birds(self.bot, guild_id_int, loser.id, winner.id, half)
 
         loot = ""
-        if powerups_cog:
+        if powerups_cog and not shield_saved:
             drop = powerups_cog.random_drop()
             if drop:
                 powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
-                loot = f"\n🎁 **{winner.name}** looted a powerup: {powerups_cog.POWERUPS[drop]['name']}!"
-
-        atk_val = self._worth(self.atk_bird, self.atk_count)
-        def_val = self._worth(self.def_bird, self.def_count)
-        bar, pct_atk, pct_def = self.odds_bar()
+                loot = f"\n🎁 **{winner.name}** looted: {powerups_cog.POWERUPS[drop]['name']}!"
 
         result_lines = []
         if shield_saved:
             result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
         else:
-            result_lines.append(f"💥 **{winner.mention}** won the fight and took home the pot!")
-        result_lines.append(f"📉 **{loser.name}** lost their wager..." if not shield_saved else f"📉 **{loser.name}** lost the fight but kept their birds!")
+            result_lines.append(f"💥 **{winner.mention}** won the battle and took **{fmt_commit(Counter(taken))}**!")
+            result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
         if loot:
             result_lines.append(loot)
 
         embed = discord.Embed(
-            title="⚔️ Fight Over!",
+            title="⚔️ Battle Over!",
             description=(
-                f"🔵 **{self.attacker.name}** (`{self.atk_count}x {self.atk_bird}`, worth `{atk_val}`)  vs  "
-                f"🟢 **{self.defender.name}** (`{self.def_count}x {self.def_bird}`, worth `{def_val}`)\n\n"
+                f"🔵 **{self.attacker.name}** (power `{int(atk_val)}`)  vs  🟢 **{self.defender.name}** (power `{int(def_val)}`)\n"
                 f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
                 + "\n".join(result_lines)
             ),
@@ -228,145 +446,55 @@ class FightConfirmView(discord.ui.View):
         await interaction.response.edit_message(content=None, embed=embed, view=None)
         self.stop()
 
-    async def on_timeout(self):
-        msg = getattr(self, "_expiry_msg", None) or self.message
-        if msg:
-            try:
-                await msg.edit(content="⏰ This fight has expired without confirmation.", embed=None, view=None)
-            except Exception:
-                pass
-
-
-class FightView(discord.ui.View):
-    def __init__(self, bot, attacker, defender, guild_id, atk_bird, atk_count):
-        super().__init__(timeout=120)
-        self.bot = bot
-        self.attacker = attacker
-        self.defender = defender
-        self.guild_id = str(guild_id)
-        self.attacker_offer = (atk_bird, atk_count)
-        self.defender_offer = None
-
-        self.target_birds = bot.db.get_inventory(int(guild_id), defender.id)
-        bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
-        self.target_select = FightSelect(self.target_birds, defender.id, bird_values)
-        self.add_item(self.target_select)
-
-    def set_defender_offer(self, bird, count):
-        self.defender_offer = (bird, count)
-
-    def status_text(self):
-        atk_bird, atk_count = self.attacker_offer
-        if self.defender_offer:
-            def_bird, def_count = self.defender_offer
-            def_str = f"`{def_count}x {def_bird}`"
-        else:
-            def_str = "*selecting...*"
-
-        return (
-            f"⚔️ **Bird Fight!**\n\n"
-            f"🔵 **{self.attacker.name}** wagers: `{atk_count}x {atk_bird}`\n"
-            f"🟢 **{self.defender.name}** wagers: {def_str}\n\n"
-            f"⚔️ The defender picks a bird, then press **Proceed to Battle** to see the odds and confirm!"
-        )
-
-    @discord.ui.button(label="⚔️ Proceed to Battle", style=discord.ButtonStyle.blurple, row=2)
-    async def proceed(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="🏃 Flee", style=discord.ButtonStyle.red, row=3)
+    async def flee(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user not in [self.attacker, self.defender]:
-            await interaction.response.send_message("❌ You are not part of this fight!", ephemeral=True)
+            await interaction.response.send_message("❌ You cannot flee this battle!", ephemeral=True)
             return
 
-        if not self.defender_offer:
-            await interaction.response.send_message("❌ The defender must pick their bird first!", ephemeral=True)
-            return
+        guild_id_int = int(self.guild_id)
+        fleer = interaction.user
+        other = self.defender if fleer == self.attacker else self.attacker
 
-        def_bird, def_count = self.defender_offer
-        atk_bird, atk_count = self.attacker_offer
+        fleet_commit = self.commit[fleer.id]
+        expanded = []
+        for bird, n in fleet_commit.items():
+            expanded.extend([bird] * n)
+        random.shuffle(expanded)
 
-        atk_val = self.bot.bird_values.get(atk_bird, 1) * atk_count
-        def_val = self.bot.bird_values.get(def_bird, 1) * def_count
-        total = atk_val + def_val
-        p_atk = atk_val / total if total > 0 else 0.5
+        lost_half = expanded[: len(expanded) // 2] if expanded else []
+        moved = transfer_birds(self.bot, guild_id_int, fleer.id, other.id, lost_half)
 
-        view = FightConfirmView(
-            self.bot, self.attacker, self.defender, self.guild_id,
-            atk_bird, atk_count, def_bird, def_count, p_atk
+        embed = discord.Embed(
+            title="🏃 Fleed!",
+            description=(
+                f"**{fleer.name}** fled the battle!\n"
+                f"🕊️ Half their birds escaped back home.\n"
+                f"⚔️ **{other.name}** captured **{fmt_commit(Counter(moved))}** from the escape!"
+            ),
+            color=discord.Color.greyple()
         )
-        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
-        view._expiry_msg = interaction.message
-
-    @discord.ui.button(label="Cancel Fight", style=discord.ButtonStyle.red, row=2)
-    async def cancel_fight(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user not in [self.attacker, self.defender]:
-            await interaction.response.send_message("❌ You cannot cancel this fight!", ephemeral=True)
-            return
-        await interaction.response.edit_message(content="❌ Fight was cancelled.", view=None)
+        await interaction.response.edit_message(content=None, embed=embed, view=None)
         self.stop()
 
     async def on_timeout(self):
         msg = getattr(self, "_expiry_msg", None) or self.message
         if msg:
             try:
-                await msg.edit(content="⏰ This fight setup has expired.", view=None)
+                await msg.edit(content="⏰ The battle came to a stalemate and ended.", embed=None, view=None)
             except Exception:
                 pass
-
-
-class FightRequestView(discord.ui.View):
-    def __init__(self, bot, attacker, defender, guild_id, atk_bird, atk_count):
-        super().__init__(timeout=60)
-        self.bot = bot
-        self.attacker = attacker
-        self.defender = defender
-        self.guild_id = guild_id
-        self.atk_bird = atk_bird
-        self.atk_count = atk_count
-
-    async def on_timeout(self):
-        msg = getattr(self, "_expiry_msg", None) or self.message
-        if msg:
-            try:
-                await msg.edit(content="⏰ This fight challenge has expired.", view=None)
-            except Exception:
-                pass
-
-    @discord.ui.button(label="Accept Fight", style=discord.ButtonStyle.green)
-    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user != self.defender:
-            await interaction.response.send_message("❌ Only the challenged user can accept this fight!", ephemeral=True)
-            return
-
-        defender_birds = self.bot.db.get_inventory(int(self.guild_id), self.defender.id)
-        if not defender_birds:
-            await interaction.response.send_message("❌ You don't have any birds to fight with in this server!", ephemeral=True)
-            return
-
-        view = FightView(self.bot, self.attacker, self.defender, self.guild_id, self.atk_bird, self.atk_count)
-        await interaction.response.edit_message(content=view.status_text(), view=view)
-        view._expiry_msg = interaction.message
-
-    @discord.ui.button(label="Decline", style=discord.ButtonStyle.red)
-    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user not in [self.attacker, self.defender]:
-            await interaction.response.send_message("❌ You cannot decline this fight!", ephemeral=True)
-            return
-        await interaction.response.edit_message(content="❌ Fight challenge declined.", view=None)
-        self.stop()
 
 
 class FightCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @discord.app_commands.command(name="fight", description="Challenge another user to a bird fight!")
-    @discord.app_commands.describe(
-        member="The user you want to fight",
-        bird="The bird you will send into battle",
-        number="How many of that bird you wager"
-    )
+    @discord.app_commands.command(name="fight", description="Challenge another user to a bird battle!")
+    @discord.app_commands.describe(member="The user you want to battle")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
-    async def fight(self, interaction: discord.Interaction, member: discord.Member, bird: str, number: int):
+    async def fight(self, interaction: discord.Interaction, member: discord.Member):
         await interaction.response.defer()
         try:
             if not interaction.guild:
@@ -374,40 +502,19 @@ class FightCog(commands.Cog):
                 return
 
             if member.bot or member == interaction.user:
-                await interaction.followup.send("❌ You cannot fight bots or yourself!", ephemeral=True)
+                await interaction.followup.send("❌ You cannot battle bots or yourself!", ephemeral=True)
                 return
 
-            if number <= 0:
-                await interaction.followup.send("❌ You must wager at least 1 bird!", ephemeral=True)
-                return
-
-            matched_bird = None
-            for b in self.bot.birds:
-                if b["name"].lower() == bird.lower():
-                    matched_bird = b
-                    break
-
-            if not matched_bird:
-                await interaction.followup.send(f"❌ Bird '{bird}' not found!", ephemeral=True)
-                return
-
-            matched_bird_name = matched_bird["name"]
             guild_id = interaction.guild.id
-            user_id = interaction.user.id
-
-            user_birds = self.bot.db.get_inventory(guild_id, user_id)
-            current_count = user_birds.count(matched_bird_name)
-            if current_count < number:
-                await interaction.followup.send(
-                    f"❌ You don't have enough **{matched_bird_name}**! You have `{current_count}`.",
-                    ephemeral=True
-                )
+            user_birds = self.bot.db.get_inventory(guild_id, interaction.user.id)
+            if not user_birds:
+                await interaction.followup.send("❌ You don't have any birds to battle with!", ephemeral=True)
                 return
 
-            view = FightRequestView(self.bot, interaction.user, member, guild_id, matched_bird_name, number)
+            view = FightSetupView(self.bot, interaction.user, member, str(guild_id))
             msg = await interaction.followup.send(
-                content=f"⚔️ {member.mention}, you have been challenged to a **bird fight** by **{interaction.user.name}**!"
-                        f"\nThey wager `{number}x {matched_bird_name}`. Accept or decline!",
+                content=f"⚔️ **{interaction.user.mention}** is preparing a battle against **{member.mention}**!",
+                embed=view.build_embed(),
                 view=view
             )
             view._expiry_msg = msg
