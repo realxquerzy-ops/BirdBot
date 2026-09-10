@@ -1002,8 +1002,7 @@ class FightCog(commands.Cog):
             print(f"Error in fight command: {e}")
             await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
 
-
-@discord.app_commands.command(name="battlelog", description="View your recent battle history")
+    @discord.app_commands.command(name="battlelog", description="View your recent battle history")
     @discord.app_commands.describe(member="User to check (defaults to yourself)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
