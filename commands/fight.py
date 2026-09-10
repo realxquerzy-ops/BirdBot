@@ -79,6 +79,7 @@ STATUS_TEXT = {
 def is_active(bot, member):
     # Use real-time presence cache first, fall back to member.status
     status = bot.presence_cache.get(member.id, member.status)
+    print(f"[fight-check] {member} (ID: {member.id}) -> cache: {bot.presence_cache.get(member.id)} | member.status: {member.status} | active: {status in (discord.Status.online, discord.Status.dnd) or time.time() - bot.last_active.get(member.id, 0) <= 120}")
     if status in (discord.Status.online, discord.Status.dnd):
         return True
     return time.time() - bot.last_active.get(member.id, 0) <= 120
