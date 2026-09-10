@@ -125,6 +125,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     print(f"{bot.user} olarak giriş yapıldı ve PostgreSQL aktif!")
 
+    for guild in bot.guilds:
+        print(f"[debug] guild={guild.name!r} members=<{len(guild.members)}>")
+    for member in bot.get_all_members():
+        if member.id in bot.whitelisted_users:
+            print(f"[debug] owner {member} status={member.status}")
+
     if os.path.exists("./commands"):
         for filename in os.listdir("./commands"):
             if filename.endswith(".py") and filename != "__init__.py":
