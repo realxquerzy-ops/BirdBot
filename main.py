@@ -127,7 +127,7 @@ bot.presence_cache = {}
 @bot.event
 async def on_presence_update(before, after):
     if before.status != after.status:
-        print(f"[presence] {after} ({after.id}) -> {after.status}")
+        print(f"[presence] {after} ({after.id}) -> {after.status} | bot: {after.bot}")
         bot.presence_cache[after.id] = after.status
 
 @bot.event
