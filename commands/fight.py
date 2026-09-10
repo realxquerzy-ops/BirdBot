@@ -372,7 +372,7 @@ class FightChallengeView(discord.ui.View):
             await interaction.response.send_message("❌ You don't have any birds to fight with!", ephemeral=True)
             return
 
-        view = FightLiveView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit))
+        view = AutoBattleView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit), def_inv)
         view._expiry_msg = interaction.message
         await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
         self.stop()
@@ -383,6 +383,343 @@ class FightChallengeView(discord.ui.View):
             await interaction.response.send_message("❌ Only the challenged player can respond!", ephemeral=True)
             return
         await self._resolve_ignore(interaction)
+
+
+class AutoBattleView(discord.ui.View):
+    def __init__(self, bot, attacker, defender, guild_id, atk_commit, def_inv):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.attacker = attacker
+        self.defender = defender
+        self.guild_id = str(guild_id)
+        self.atk_commit = Counter(atk_commit)
+        self.def_commit = Counter()
+        self.def_inv = def_inv
+        self.phase = "waiting"  # waiting, battling, extension
+        self._timer_task = None
+        self._deadline = time.time() + 20
+        self._resolving = False
+        
+        bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
+        self.def_select = FightAddSelect(def_inv, defender.id, bird_values, f"{defender.name}: Send birds to defend!", row=0)
+        self.add_item(self.def_select)
+        self.send_btn = discord.ui.Button(label="⚔️ Send Birds!", style=discord.ButtonStyle.green, row=1)
+        self.send_btn.callback = self.send_birds
+        self.add_item(self.send_btn)
+        
+        self._timer_task = asyncio.create_task(self._countdown())
+
+    def stop(self):
+        if getattr(self, "_resolving", False):
+            super().stop()
+            return
+        task = getattr(self, "_timer_task", None)
+        if task and not task.done():
+            task.cancel()
+        super().stop()
+
+    def build_embed(self, remaining=None):
+        atk_val = commit_value(self.bot, self.atk_commit)
+        def_val = commit_value(self.bot, self.def_commit)
+        
+        if self.phase == "waiting":
+            timer_line = f"\n⏳ **{self.defender.name}** has `{max(0, int(remaining))}s` to send birds!" if remaining is not None else ""
+            return discord.Embed(
+                title="⚔️ Battle Started!",
+                description=(
+                    f"🔵 **{self.attacker.name}** attacks with: **{fmt_commit(self.atk_commit)}** (power `{int(atk_val)}`)\n"
+                    f"🟢 **{self.defender.name}** must send birds to defend!\n"
+                    f"{timer_line}\n\n"
+                    f"💡 If no birds sent in time, **{self.attacker.name}** wins automatically!"
+                ),
+                color=discord.Color.orange()
+            )
+        elif self.phase == "battling":
+            total = atk_val + def_val
+            p_atk = atk_val / total if total > 0 else 0.5
+            pct_atk = max(0.01, min(99.99, p_atk * 100))
+            pct_def = max(0.01, min(99.99, 100 - pct_atk))
+            atk_blocks = round(10 * pct_atk / 100)
+            bar = "🔵" * atk_blocks + "🟢" * (10 - atk_blocks)
+            return discord.Embed(
+                title="⚔️ Battle Resolving...",
+                description=(
+                    f"🔵 **{self.attacker.name}**: **{fmt_commit(self.atk_commit)}** (power `{int(atk_val)}`)\n"
+                    f"🟢 **{self.defender.name}**: **{fmt_commit(self.def_commit)}** (power `{int(def_val)}`)\n\n"
+                    f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
+                    f"⚔️ Calculating winner..."
+                ),
+                color=discord.Color.dark_red()
+            )
+        elif self.phase == "extension":
+            timer_line = f"\n⏳ **{self.defender.name}** has `{max(0, int(remaining))}s` to send more birds!" if remaining is not None else ""
+            return discord.Embed(
+                title="⚔️ Attacker Won Round 1!",
+                description=(
+                    f"🔵 **{self.attacker.name}** defeated your birds!\n"
+                    f"🟢 **{self.defender.name}** has one last chance — send more birds!\n"
+                    f"{timer_line}\n\n"
+                    f"💡 If no birds sent, **{self.attacker.name}** wins the battle!"
+                ),
+                color=discord.Color.red()
+            )
+
+    async def _countdown(self):
+        try:
+            while not self.is_finished():
+                remaining = self._deadline - time.time()
+                if remaining <= 0:
+                    if self.phase == "waiting":
+                        await self._resolve_timeout()
+                    elif self.phase == "extension":
+                        await self._resolve_extension_timeout()
+                    return
+                msg = getattr(self, "_expiry_msg", None) or self.message
+                if msg:
+                    try:
+                        await msg.edit(embed=self.build_embed(remaining))
+                    except Exception:
+                        pass
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
+
+    async def _resolve_timeout(self):
+        self._resolving = True
+        if not self.def_commit:
+            embed = discord.Embed(
+                title="⚔️ Battle Over!",
+                description=(
+                    f"🟢 **{self.defender.name}** failed to send birds in time!\n"
+                    f"💥 **{self.attacker.mention}** wins by default!"
+                ),
+                color=discord.Color.green()
+            )
+            await self._finish(embed)
+        else:
+            # Resolve battle with whatever birds were sent
+            class FakeInteraction:
+                def __init__(self, message):
+                    self.message = message
+                    self.response = self
+                async def edit_message(self, **kwargs):
+                    try:
+                        await self.message.edit(**kwargs)
+                    except:
+                        pass
+                async def edit_original_response(self, **kwargs):
+                    try:
+                        await self.message.edit(**kwargs)
+                    except:
+                        pass
+            
+            fake_interaction = FakeInteraction(self._expiry_msg or self.message)
+            await self._resolve_battle(fake_interaction)
+
+    async def _resolve_extension_timeout(self):
+        self._resolving = True
+        embed = discord.Embed(
+            title="⚔️ Battle Over!",
+            description=(
+                f"🟢 **{self.defender.name}** failed to send more birds!\n"
+                f"💥 **{self.attacker.mention}** wins the battle!"
+            ),
+            color=discord.Color.green()
+        )
+        await self._finish(embed)
+
+    async def _finish(self, embed):
+        msg = getattr(self, "_expiry_msg", None) or self.message
+        if msg:
+            try:
+                await msg.edit(content=None, embed=embed, view=None)
+            except Exception:
+                pass
+        self.stop()
+
+    async def send_birds(self, interaction: discord.Interaction):
+        if interaction.user.id != self.defender.id:
+            await interaction.response.send_message("❌ Only the defender can send birds!", ephemeral=True)
+            return
+        
+        if not self.def_select.values or self.def_select.values[0] == "No birds available":
+            await interaction.response.send_message("❌ You don't have any birds to send!", ephemeral=True)
+            return
+        
+        bird = self.def_select.selected_bird
+        if not bird:
+            await interaction.response.send_message("❌ Select a bird first!", ephemeral=True)
+            return
+        
+        counts = Counter(self.def_inv)
+        max_allowed = counts.get(bird, 0)
+        
+        await interaction.response.send_modal(AutoBattleModal(self, bird, max_allowed))
+
+    async def resolve_now(self, interaction: discord.Interaction):
+        if interaction.user.id != self.defender.id:
+            await interaction.response.send_message("❌ Only the defender can start the fight!", ephemeral=True)
+            return
+        if not self.def_commit:
+            await interaction.response.send_message("❌ Send at least one bird first!", ephemeral=True)
+            return
+        await self._resolve_battle(interaction)
+
+    async def _resolve_battle(self, interaction):
+        self.phase = "battling"
+        self._timer_task.cancel()
+        
+        # Handle both real and fake interactions
+        is_fake = not hasattr(interaction, 'response') or not hasattr(interaction.response, 'edit_message')
+        
+        if not is_fake:
+            await interaction.response.edit_message(embed=self.build_embed(), view=None)
+        else:
+            try:
+                await interaction.message.edit(embed=self.build_embed(), view=None)
+            except:
+                pass
+        
+        guild_id_int = int(self.guild_id)
+        winner, attacker_wins, taken = await self._resolve_battle_internal(
+            interaction, self.atk_commit, self.def_commit, 
+            self.attacker, self.defender, guild_id_int
+        )
+        
+        if attacker_wins:
+            if not is_fake:
+                await self._start_extension_phase(interaction)
+            else:
+                # For timeout resolution, defender lost - attacker wins
+                self.stop()
+        else:
+            self.stop()
+
+    async def _resolve_battle_internal(self, interaction, attacker_commit, defender_commit, attacker, defender, guild_id_int):
+        atk_val = commit_value(self.bot, attacker_commit)
+        def_val = commit_value(self.bot, defender_commit)
+        total = atk_val + def_val
+        p_atk = atk_val / total if total > 0 else 0.5
+
+        attacker_wins = random.random() < p_atk
+        winner = attacker if attacker_wins else defender
+        loser = defender if attacker_wins else attacker
+        loser_commit = dict(attacker_commit if attacker_wins else defender_commit)
+
+        pct_atk = max(0.01, min(99.99, p_atk * 100))
+        pct_def = max(0.01, min(99.99, 100 - pct_atk))
+        atk_blocks = round(10 * pct_atk / 100)
+        bar = "🔵" * atk_blocks + "🟢" * (10 - atk_blocks)
+
+        powerups_cog = self.bot.get_cog("PowerupsCog")
+        shield_saved = False
+        taken = []
+
+        if powerups_cog and powerups_cog.consume_shield(guild_id_int, loser.id):
+            shield_saved = True
+        else:
+            expanded = []
+            for bird, n in loser_commit.items():
+                expanded.extend([bird] * n)
+            random.shuffle(expanded)
+            half = expanded[: len(expanded) // 2] if expanded else []
+            taken = transfer_birds(self.bot, guild_id_int, loser.id, winner.id, half)
+
+        loot = ""
+        if powerups_cog and not shield_saved:
+            drop = powerups_cog.random_drop()
+            if drop:
+                powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
+                loot = f"\n🎁 **{winner.name}** looted: {powerups_cog.POWERUPS[drop]['name']}!"
+
+        result_lines = []
+        if shield_saved:
+            result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
+        else:
+            result_lines.append(f"💥 **{winner.mention}** won the battle and took **{fmt_commit(Counter(taken))}**!")
+            result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
+        if loot:
+            result_lines.append(loot)
+
+        embed = discord.Embed(
+            title="⚔️ Battle Over!",
+            description=(
+                f"🔵 **{attacker.name}** (power `{int(atk_val)}`)  vs  🟢 **{defender.name}** (power `{int(def_val)}`)\n"
+                f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
+                + "\n".join(result_lines)
+            ),
+            color=discord.Color.green() if winner == attacker else discord.Color.blurple()
+        )
+        is_fake = not hasattr(interaction, 'response') or not hasattr(interaction.response, 'edit_message')
+        
+        if not is_fake:
+            await interaction.edit_original_response(embed=embed, view=None)
+        else:
+            try:
+                await interaction.message.edit(embed=embed, view=None)
+            except:
+                pass
+        return winner, attacker_wins, taken
+
+    async def _start_extension_phase(self, interaction):
+        self.phase = "extension"
+        self.def_commit = Counter()
+        self._deadline = time.time() + 10
+        self._timer_task = asyncio.create_task(self._countdown())
+        
+        new_def_inv = self.bot.db.get_inventory(int(self.guild_id), self.defender.id)
+        self.def_inv = new_def_inv
+        
+        bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in self.bot.birds}
+        self.clear_items()
+        self.def_select = FightAddSelect(new_def_inv, self.defender.id, bird_values, f"{self.defender.name}: Send more birds!", row=0)
+        self.add_item(self.def_select)
+        self.send_btn = discord.ui.Button(label="⚔️ Send Birds!", style=discord.ButtonStyle.green, row=1)
+        self.send_btn.callback = self.send_birds
+        self.add_item(self.send_btn)
+        
+        await interaction.followup.edit_message(
+            interaction.message.id, 
+            embed=self.build_embed(), 
+            view=self
+        )
+
+
+class AutoBattleModal(discord.ui.Modal):
+    def __init__(self, view, bird, max_count):
+        super().__init__(title=f"Send {bird} to Battle")
+        self.view = view
+        self.bird = bird
+        self.max_count = max_count
+        self.count_input = discord.ui.TextInput(
+            label=f"How many {bird}? (Max: {max_count})",
+            placeholder="Enter a number...",
+            min_length=1,
+            max_length=3,
+            default="1"
+        )
+        self.add_item(self.count_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            val = int(self.count_input.value)
+            if val < 1 or val > self.max_count:
+                raise ValueError()
+        except ValueError:
+            await interaction.response.send_message(f"❌ Enter a valid number between 1 and {self.max_count}!", ephemeral=True)
+            return
+
+        self.view.def_commit[self.bird] = self.view.def_commit.get(self.bird, 0) + val
+        
+        # Add "Fight Now!" button if not already present
+        if not hasattr(self.view, 'fight_now_btn') or self.view.fight_now_btn not in self.view.children:
+            self.view.fight_now_btn = discord.ui.Button(label="⚔️ Fight Now!", style=discord.ButtonStyle.red, row=2)
+            self.view.fight_now_btn.callback = self.view.resolve_now
+            self.view.add_item(self.view.fight_now_btn)
+        
+        await interaction.response.edit_message(embed=self.view.build_embed(), view=self.view)
 
 
 class FightLiveView(discord.ui.View):
@@ -467,22 +804,16 @@ class FightLiveView(discord.ui.View):
 
         await self._resolve(interaction)
 
-    async def _resolve(self, interaction: discord.Interaction):
-        guild_id_int = int(self.guild_id)
-        atk_commit = self.commit[self.attacker.id]
-        def_commit = self.commit[self.defender.id]
-
-        atk_val = commit_value(self.bot, atk_commit)
-        def_val = commit_value(self.bot, def_commit)
+    async def _resolve_battle(self, interaction, attacker_commit, defender_commit, attacker, defender, guild_id_int):
+        atk_val = commit_value(self.bot, attacker_commit)
+        def_val = commit_value(self.bot, defender_commit)
         total = atk_val + def_val
         p_atk = atk_val / total if total > 0 else 0.5
 
         attacker_wins = random.random() < p_atk
-        winner = self.attacker if attacker_wins else self.defender
-        loser = self.defender if attacker_wins else self.attacker
-
-        loser_commit = dict(atk_commit if attacker_wins else def_commit)
-        winner_side = self.defender if attacker_wins else self.attacker
+        winner = attacker if attacker_wins else defender
+        loser = defender if attacker_wins else attacker
+        loser_commit = dict(attacker_commit if attacker_wins else defender_commit)
 
         pct_atk = max(0.01, min(99.99, p_atk * 100))
         pct_def = max(0.01, min(99.99, 100 - pct_atk))
@@ -522,14 +853,15 @@ class FightLiveView(discord.ui.View):
         embed = discord.Embed(
             title="⚔️ Battle Over!",
             description=(
-                f"🔵 **{self.attacker.name}** (power `{int(atk_val)}`)  vs  🟢 **{self.defender.name}** (power `{int(def_val)}`)\n"
+                f"🔵 **{attacker.name}** (power `{int(atk_val)}`)  vs  🟢 **{defender.name}** (power `{int(def_val)}`)\n"
                 f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
                 + "\n".join(result_lines)
             ),
-            color=discord.Color.green() if winner == self.attacker else discord.Color.blurple()
+            color=discord.Color.green() if winner == attacker else discord.Color.blurple()
         )
         await interaction.response.edit_message(content=None, embed=embed, view=None)
         self.stop()
+        return winner, attacker_wins, taken
 
     @discord.ui.button(label="🏃 Flee", style=discord.ButtonStyle.red, row=3)
     async def flee(self, interaction: discord.Interaction, button: discord.ui.Button):
