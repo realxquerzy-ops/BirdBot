@@ -315,7 +315,24 @@ class FightChallengeView(discord.ui.View):
                 remaining = self._deadline - time.time()
                 if remaining <= 0:
                     self._resolving = True
-                    await self._resolve_ignore()
+                    try:
+                        await self._resolve_ignore()
+                    except Exception as e:
+                        print(f"[fight] auto-ignore error: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        msg = getattr(self, "_expiry_msg", None) or self.message
+                        if msg:
+                            try:
+                                embed = discord.Embed(
+                                    title="🕶️ Attack Missed!",
+                                    description="**{0}** tried to attack **{1}** but the attack failed!".format(self.attacker.name, self.defender.name),
+                                    color=discord.Color.greyple()
+                                )
+                                await msg.edit(content=None, embed=embed, view=None)
+                            except Exception:
+                                pass
+                    self.stop()
                     return
                 msg = getattr(self, "_expiry_msg", None) or self.message
                 if msg:
@@ -326,8 +343,10 @@ class FightChallengeView(discord.ui.View):
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
             pass
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[fight] countdown error: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def _resolve_ignore(self, interaction=None):
         chance, steal_num = attack_roll(self.bot, self.atk_commit)
