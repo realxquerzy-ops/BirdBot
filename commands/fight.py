@@ -181,7 +181,14 @@ class FightAddSelect(discord.ui.Select):
 
         self.selected_bird = self.values[0]
         if self.auto_battle:
-            await interaction.response.defer()  # Just acknowledge selection
+            view = self.view
+            counts = Counter(view.def_inv)
+            committed = view.def_commit.get(self.selected_bird, 0)
+            remaining = counts.get(self.selected_bird, 0) - committed
+            if remaining < 1:
+                await interaction.response.send_message("❌ You already sent all of that bird!", ephemeral=True)
+                return
+            await interaction.response.send_modal(AutoBattleModal(view, self.selected_bird, remaining))
         else:
             await interaction.response.send_modal(FightAddModal(self, self.view))
 
@@ -475,9 +482,6 @@ class AutoBattleView(discord.ui.View):
         bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
         self.def_select = FightAddSelect(def_inv, defender.id, bird_values, f"{defender.name}: Send birds to defend!", row=0, auto_battle=True)
         self.add_item(self.def_select)
-        self.send_btn = discord.ui.Button(label="⚔️ Send Birds!", style=discord.ButtonStyle.green, row=1)
-        self.send_btn.callback = self.send_birds
-        self.add_item(self.send_btn)
         
         self._timer_task = asyncio.create_task(self._countdown())
 
@@ -772,9 +776,6 @@ class AutoBattleView(discord.ui.View):
         self.clear_items()
         self.def_select = FightAddSelect(new_def_inv, self.defender.id, bird_values, f"{self.defender.name}: Send more birds!", row=0, auto_battle=True)
         self.add_item(self.def_select)
-        self.send_btn = discord.ui.Button(label="⚔️ Send Birds!", style=discord.ButtonStyle.green, row=1)
-        self.send_btn.callback = self.send_birds
-        self.add_item(self.send_btn)
         
         await interaction.followup.edit_message(
             interaction.message.id, 
