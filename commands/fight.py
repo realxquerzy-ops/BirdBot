@@ -469,7 +469,7 @@ class AutoBattleView(discord.ui.View):
         self.def_inv = def_inv
         self.phase = "waiting"  # waiting, battling, extension
         self._timer_task = None
-        self._deadline = time.time() + 15
+        self._deadline = time.time() + 30
         self._resolving = False
         
         bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
