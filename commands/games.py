@@ -1,4 +1,5 @@
 import random
+import time
 from collections import Counter
 
 import discord
@@ -207,6 +208,81 @@ class GamesCog(commands.Cog):
                 await target_channel.send(content=content_text)
         except Exception as e:
             print(f"Could not send test bird message: {e}")
+
+    @discord.app_commands.command(name="spawn", description="Spawn a real catchable bird (whitelist only)")
+    @discord.app_commands.describe(bird_name="Specific bird to spawn (leave empty for random)")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def spawn_command(self, interaction: discord.Interaction, bird_name: str = None):
+        if interaction.user.id not in self.bot.whitelisted_users:
+            await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        guild_id = str(interaction.guild.id)
+        state = self.bot.spawn_states.get(guild_id)
+        if state is None:
+            state = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
+            self.bot.spawn_states[guild_id] = state
+        if state["active"]:
+            await interaction.followup.send("❌ A bird is already active! Wait for it to be caught first.", ephemeral=True)
+            return
+
+        channel_id = self.bot.db.get_server_channel(interaction.guild.id)
+        if not channel_id:
+            await interaction.followup.send("❌ No bird channel set for this server!", ephemeral=True)
+            return
+
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except Exception:
+                await interaction.followup.send("❌ Could not find the bird channel!", ephemeral=True)
+                return
+
+        if bird_name:
+            matched = None
+            for bird in self.bot.birds:
+                if bird["name"].lower() == bird_name.lower():
+                    matched = bird
+                    break
+            if not matched:
+                available = ", ".join(b["name"] for b in self.bot.birds)
+                await interaction.followup.send(f"❌ Bird '{bird_name}' not found!\n**Available:** {available}", ephemeral=True)
+                return
+        else:
+            core_cog = self.bot.get_cog("CoreCog")
+            weights = core_cog.spawn_weights if core_cog else [float(b.get("weight", 1)) for b in self.bot.birds]
+            matched = random.choices(self.bot.birds, weights=weights, k=1)[0]
+
+        state["active"] = True
+        state["spawn_time"] = time.time()
+        state["name"] = matched["name"]
+
+        sticker = None
+        try:
+            sticker = await self.bot.fetch_sticker(matched["sticker_id"])
+        except Exception:
+            pass
+
+        content_text = f"A wild **{matched['name']}** appeared! Type **bird** to catch it!"
+        msg = None
+        if sticker and isinstance(channel, discord.TextChannel):
+            try:
+                msg = await channel.send(content=content_text, stickers=[sticker])
+            except discord.HTTPException:
+                msg = await channel.send(content=content_text)
+        else:
+            msg = await channel.send(content=content_text)
+
+        state["msg_obj"] = msg
+        await interaction.followup.send(f"✅ Spawned **{matched['name']}** in {channel.mention}! (real, catchable)", ephemeral=True)
 
     @discord.app_commands.command(name="pip", description="???")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
