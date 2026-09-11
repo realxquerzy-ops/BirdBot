@@ -1146,6 +1146,9 @@ class FightCog(commands.Cog):
                 view=view
             )
             view._expiry_msg = msg
+            games_cog = self.bot.get_cog("GamesCog")
+            if games_cog:
+                await games_cog.unlock_achievement(interaction.user.id, "fight_birdbot", interaction.channel, guild_id=guild_id)
         except Exception as e:
             print(f"[fight] fight_birdbot setup error: {e}")
             import traceback

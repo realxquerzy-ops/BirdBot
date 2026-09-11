@@ -46,7 +46,8 @@ class GamesCog(commands.Cog):
         "its_over": {"name": "It's over.", "desc": "Gamble everything you have of a bird and lose", "hidden": False},
         "collector": {"name": "Collector", "desc": "Have every type of bird in your inventory", "hidden": False},
         "ultra_bird": {"name": "ULTRA BIRD", "desc": "Have every type of bird x5 in your inventory", "hidden": False},
-        "god_bird": {"name": "GOD BIRD", "desc": "Have every type of bird x25 in your inventory", "hidden": False}
+        "god_bird": {"name": "GOD BIRD", "desc": "Have every type of bird x25 in your inventory", "hidden": False},
+        "fight_birdbot": {"name": "Brave Fool", "desc": "Challenge BirdBot to a battle", "hidden": False}
     }
 
     async def unlock_achievement(self, user_id, ach_id, channel=None, guild_id=None):
