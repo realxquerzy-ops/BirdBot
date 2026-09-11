@@ -136,6 +136,18 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 bot.presence_cache = {}
 
+@bot.tree.error
+async def on_tree_error(interaction: discord.Interaction, error: Exception):
+    import traceback
+    traceback.print_exc()
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send("❌ Bir hata oluştu. Lütfen tekrar deneyin.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Bir hata oluştu. Lütfen tekrar deneyin.", ephemeral=True)
+    except Exception:
+        pass
+
 @bot.event
 async def on_presence_update(before, after):
     if before.status != after.status:

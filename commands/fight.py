@@ -115,12 +115,16 @@ class FightAddModal(discord.ui.Modal):
             return
 
         bird = self.select_item.selected_bird
+        if not bird:
+            await interaction.response.send_message("❌ Select a bird first!", ephemeral=True)
+            return
+
         committed = view.commit[owner_id]
         pool = view.max_pool[owner_id]
         max_allowed = pool.get(bird, 0) - committed.get(bird, 0)
 
         try:
-            val = int(self.count_input.value)
+            val = int((self.count_input.value or "").strip())
             if val < 1 or val > max_allowed:
                 raise ValueError()
         except ValueError:
@@ -130,7 +134,20 @@ class FightAddModal(discord.ui.Modal):
             return
 
         committed[bird] = committed.get(bird, 0) + val
-        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+        try:
+            await interaction.response.defer()
+            await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
+        except Exception as e:
+            import traceback
+            print(f"[fight-modal] edit failed: {e}")
+            traceback.print_exc()
+            try:
+                await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+            except Exception:
+                try:
+                    await interaction.followup.send(content=None, embed=view.build_embed(), view=view)
+                except Exception:
+                    pass
 
 
 class FightAddSelect(discord.ui.Select):
@@ -211,10 +228,12 @@ class FightSetupView(discord.ui.View):
             await interaction.response.send_message("❌ Send at least one bird to battle first!", ephemeral=True)
             return
 
+        await interaction.response.defer()
+
         if self.is_boss:
             view = BirdBotAutoBattleView(self.bot, self.attacker, self.target, self.guild_id, dict(self.commit[self.attacker.id]))
             view._expiry_msg = interaction.message
-            await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+            await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
             self.stop()
             return
 
@@ -224,7 +243,7 @@ class FightSetupView(discord.ui.View):
             embed=view.build_embed(),
             view=view
         )
-        await interaction.response.edit_message(embed=discord.Embed(
+        await interaction.edit_original_response(embed=discord.Embed(
             title="📨 Challenge Sent!",
             description=f"**{self.attacker.name}** sent a battle challenge to **{self.target.name}**!",
             color=discord.Color.green()
@@ -405,7 +424,8 @@ class FightChallengeView(discord.ui.View):
 
         view = AutoBattleView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit), def_inv)
         view._expiry_msg = interaction.message
-        await interaction.response.edit_message(content=None, embed=view.build_embed(), view=view)
+        await interaction.response.defer()
+        await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
         self.stop()
 
     @discord.ui.button(label="🕶️ Ignore", style=discord.ButtonStyle.grey, row=1)
@@ -413,6 +433,7 @@ class FightChallengeView(discord.ui.View):
         if interaction.user.id != self.defender.id:
             await interaction.response.send_message("❌ Only the challenged player can respond!", ephemeral=True)
             return
+        await interaction.response.defer()
         await self._resolve_ignore(interaction)
 
 
