@@ -351,25 +351,45 @@ class SocialCog(commands.Cog):
 
         guild = interaction.guild
         cached = len(guild.members)
+        total_cached_globally = len(self.bot.presence_cache)
 
         status_map = {}
-        for m in list(guild.members)[:10]:
+        for m in guild.members:
             # Use real-time cache if available, fall back to member.status
             status = self.bot.presence_cache.get(m.id, m.status)
             status_map[str(m)] = f"{status}"
-        
+
         target_status = self.bot.presence_cache.get(member.id, member.status)
         status_map["TARGET " + str(member)] = f"{target_status}"
 
+        members_list = "\n".join(f"`{k}` -> `{v}`" for k, v in status_map.items())
+
+        # Discord embed descriptions are capped at 4096 chars, so split the
+        # member list across multiple fields (each field capped at 1024 chars)
+        # to make sure ALL members are actually shown, not just a sample.
         embed = discord.Embed(
             title="🔍 Presence Debug",
             description=(
-                f"👥 **Cached members in `{guild.name}`:** `{cached}`\n"
+                f"👥 **Members in `{guild.name}`:** `{cached}`\n"
+                f"🌐 **Total entries in presence_cache (all guilds):** `{total_cached_globally}`\n"
                 f"🎯 **{member}** status: `{target_status}`\n\n"
-                f"**Sample members:**\n" + "\n".join(f"`{k}` -> `{v}`" for k, v in status_map.items())
+                f"This shows the FULL contents of `presence_cache` for this guild — "
+                f"every member's status is tracked from startup, not just whitelisted users."
             ),
             color=discord.Color.blue()
         )
+
+        chunk = ""
+        field_index = 1
+        for line in members_list.split("\n"):
+            if len(chunk) + len(line) + 1 > 1024:
+                embed.add_field(name=f"All members ({field_index})", value=chunk or "—", inline=False)
+                chunk = ""
+                field_index += 1
+            chunk += line + "\n"
+        if chunk:
+            embed.add_field(name=f"All members ({field_index})", value=chunk, inline=False)
+
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @discord.app_commands.command(name="setchannel", description="Set the channel where birds will spawn (Admin only)")
