@@ -165,6 +165,8 @@ class TradeConfirmView(discord.ui.View):
             await interaction.response.edit_message(content=self.update_status_text(), view=self)
             return
 
+        await interaction.response.defer()
+
         guild_id_int = int(self.guild_id)
         init_id = self.initiator.id
         target_id = self.target.id
@@ -183,7 +185,7 @@ class TradeConfirmView(discord.ui.View):
                 break
 
         if not can_trade:
-            await interaction.response.send_message("❌ Trade failed! One of the users no longer has enough of the selected birds.", ephemeral=True)
+            await interaction.followup.send("❌ Trade failed! One of the users no longer has enough of the selected birds.", ephemeral=True)
             return
 
         for bird, count in self.offers[init_id].items():
@@ -222,7 +224,7 @@ class TradeConfirmView(discord.ui.View):
             description=f"**{self.initiator.name}** gave {init_summary} and received {target_summary} from **{self.target.name}**!",
             color=discord.Color.green()
         )
-        await interaction.response.edit_message(content=None, embed=embed, view=None)
+        await interaction.edit_original_response(content=None, embed=embed, view=None)
         self.stop()
 
     @discord.ui.button(label="Cancel / Decline", style=discord.ButtonStyle.red, row=2)
@@ -248,9 +250,11 @@ class TradeRequestView(discord.ui.View):
             await interaction.response.send_message("Only the user who received the trade request can accept it!", ephemeral=True)
             return
 
+        await interaction.response.defer()
+
         target_birds = self.bot.db.get_inventory(int(self.guild_id), self.target.id)
         if not target_birds:
-            await interaction.response.send_message("You don't have any birds to trade in this server!", ephemeral=True)
+            await interaction.followup.send("You don't have any birds to trade in this server!", ephemeral=True)
             return
 
         view = TradeConfirmView(self.bot, self.initiator, self.target, self.guild_id)
@@ -259,7 +263,7 @@ class TradeRequestView(discord.ui.View):
             f"🔵 **{self.initiator.name}'s Offer:**\nNothing selected — *(⏳ Pending...)*\n\n"
             f"🟢 **{self.target.name}'s Offer:**\nNothing selected — *(⏳ Pending...)*"
         )
-        await interaction.response.edit_message(content=content, view=view)
+        await interaction.edit_original_response(content=content, view=view)
 
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.red)
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):

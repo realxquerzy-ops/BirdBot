@@ -444,14 +444,15 @@ class FightChallengeView(discord.ui.View):
             await interaction.response.send_message("❌ Only the challenged player can respond!", ephemeral=True)
             return
 
+        await interaction.response.defer()
+
         def_inv = self.bot.db.get_inventory(int(self.guild_id), self.defender.id)
         if not def_inv:
-            await interaction.response.send_message("❌ You don't have any birds to fight with!", ephemeral=True)
+            await interaction.followup.send("❌ You don't have any birds to fight with!", ephemeral=True)
             return
 
         view = AutoBattleView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit), def_inv)
         view._expiry_msg = interaction.message
-        await interaction.response.defer()
         await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
         self.stop()
 
