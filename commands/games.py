@@ -383,7 +383,7 @@ class GamesCog(commands.Cog):
 
             is_all = False
             if amount.lower() == "all":
-                number = current_count
+                number = min(current_count, 100)
                 is_all = True
             else:
                 try:
@@ -396,6 +396,9 @@ class GamesCog(commands.Cog):
                 await interaction.followup.send(f"❌ Invalid amount! You have `{current_count}` of this bird.", ephemeral=True)
                 return
 
+            if number > 100:
+                number = 100
+
             await self.unlock_achievement(user_id, "lets_go_gambling", interaction.channel, guild_id)
 
             if self.rarest_bird:
@@ -407,7 +410,13 @@ class GamesCog(commands.Cog):
 
             if won:
                 self.gamble_losses.pop(key, None)
-                user_birds.extend([matched_bird_name] * number)
+                if number > 8:
+                    won_amount = round(number * 1.5) - number
+                    mult_txt = f"only gained **{round(number * 1.5)}x total** (1.5x multiplier)"
+                else:
+                    won_amount = number
+                    mult_txt = f"doubled it to **{number * 2}x**!"
+                user_birds.extend([matched_bird_name] * won_amount)
                 self.bot.db.save_inventory(guild_id, user_id, user_birds)
 
                 if is_all:
@@ -417,7 +426,7 @@ class GamesCog(commands.Cog):
 
                 embed = discord.Embed(
                     title="🎰 Gamble Successful!",
-                    description=f"🎉 **{interaction.user.mention}** won the gamble and doubled **{number}x {matched_bird_name}**!",
+                    description=f"🎉 **{interaction.user.mention}** won the gamble and {mult_txt} (**{number}x {matched_bird_name}**)",
                     color=discord.Color.green()
                 )
                 await interaction.followup.send(embed=embed)
