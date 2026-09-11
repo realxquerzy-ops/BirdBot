@@ -25,17 +25,17 @@ class ShopCog(commands.Cog):
         cog = self.bot.get_cog("PowerupsCog")
         return getattr(cog, "POWERUPS", {}) if cog else {}
 
-    @discord.app_commands.command(name="sell", description="Sell your birds for BirdCoin!")
-    @discord.app_commands.describe(bird="Which bird to sell", count="How many to sell (default 1)")
+    @discord.app_commands.command(name="sell", description="Sell birds for BirdCoin (default: all of that bird)")
+    @discord.app_commands.describe(bird="Which bird to sell", count="How many to sell (leave empty to sell all)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
-    async def sell(self, interaction: discord.Interaction, bird: str, count: int = 1):
+    async def sell(self, interaction: discord.Interaction, bird: str, count: int = 0):
         await interaction.response.defer()
         if not interaction.guild:
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
-        if count < 1:
-            await interaction.followup.send("❌ Count must be at least 1!", ephemeral=True)
+        if count < 0:
+            await interaction.followup.send("❌ Count must be 0 or more!", ephemeral=True)
             return
 
         canon = next(
@@ -54,21 +54,19 @@ class ShopCog(commands.Cog):
         if owned <= 0:
             await interaction.followup.send(f"❌ You don't have **{canon}** to sell!", ephemeral=True)
             return
-        if count > owned:
-            await interaction.followup.send(f"❌ You only have `{owned}x` **{canon}**!", ephemeral=True)
-            return
 
+        n = owned if count == 0 else min(count, owned)
         removed = 0
         new_inv = []
         for b in inv:
-            if b == canon and removed < count:
+            if b == canon and removed < n:
                 removed += 1
             else:
                 new_inv.append(b)
         self.bot.db.save_inventory(guild_id, user_id, new_inv)
 
         value = self.bot.bird_values.get(canon, 1)
-        earned = value * count
+        earned = value * n
         self.bot.db.add_birdcoin(guild_id, user_id, earned)
         new_balance = self.bot.db.get_birdcoin(guild_id, user_id)
 
@@ -76,10 +74,14 @@ class ShopCog(commands.Cog):
         if games_cog:
             await games_cog.unlock_achievement(user_id, "sell_first", interaction.channel, guild_id=guild_id)
 
+        if n == owned:
+            amount_txt = f"all `{n}x`"
+        else:
+            amount_txt = f"`{n}x` (you still have `{owned - n}x`)"
         embed = discord.Embed(
             title="💸 Sale Complete!",
             description=(
-                f"Sold `{count}x` **{canon}** for 🪙 **{self.fmt_coin(earned)} BirdCoin**!\n"
+                f"Sold {amount_txt} **{canon}** for 🪙 **{self.fmt_coin(earned)} BirdCoin**!\n"
                 f"🪙 New balance: `{self.fmt_coin(new_balance)}`"
             ),
             color=discord.Color.green()
