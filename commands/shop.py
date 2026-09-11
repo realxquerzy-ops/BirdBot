@@ -25,8 +25,15 @@ class ShopCartView(discord.ui.View):
                 row=i // 5,
             )
 
-            async def _buy_cb(interaction: discord.Interaction, btn: discord.ui.Button, _key=key, _price=price):
-                await self._buy(interaction, _key, _price)
+            async def _buy_cb(interaction: discord.Interaction, _key=key, _price=price):
+                try:
+                    await self._buy(interaction, _key, _price)
+                except Exception as e:
+                    print(f"Buy error: {e}")
+                    try:
+                        await interaction.followup.send("❌ Something went wrong while buying.", ephemeral=True)
+                    except Exception:
+                        pass
 
             button.callback = _buy_cb
             self.add_item(button)
