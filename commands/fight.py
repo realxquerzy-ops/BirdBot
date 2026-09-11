@@ -1200,15 +1200,24 @@ class BirdBotAutoBattleView(discord.ui.View):
     BOSS_BIRD = "Radioactive Bird"
 
     def __init__(self, bot, attacker, defender, guild_id, atk_commit):
-        super().__init__(timeout=120)
+        super().__init__(timeout=None)
         self.bot = bot
         self.attacker = attacker
         self.defender = defender
         self.guild_id = str(guild_id)
         self.atk_commit = Counter(atk_commit)
         self.def_commit = Counter({BirdBotAutoBattleView.BOSS_BIRD: 999})
+        self._resolving = False
+        self._deadline = time.time() + 60
+        self._timer_task = asyncio.create_task(self._countdown())
 
-    def build_embed(self):
+    def stop(self):
+        task = getattr(self, "_timer_task", None)
+        if task and not task.done():
+            task.cancel()
+        super().stop()
+
+    def build_embed(self, remaining=None):
         atk_val = commit_value(self.bot, self.atk_commit)
         def_val = commit_value(self.bot, self.def_commit)
         total = atk_val + def_val
@@ -1217,6 +1226,12 @@ class BirdBotAutoBattleView(discord.ui.View):
         pct_def = max(0.01, min(99.99, 100 - pct_atk))
         blocks = round(10 * pct_atk / 100)
         bar = "🔵" * blocks + "🟢" * (10 - blocks)
+        timer_line = ""
+        if remaining is not None:
+            timer_line = (
+                f"\n⏳ Battle auto-resolves in `{max(0, int(remaining))}s` "
+                f"if **⚔️ Fight!** isn't pressed!"
+            )
         return discord.Embed(
             title="⚔️ Battle Started!",
             description=(
@@ -1224,10 +1239,39 @@ class BirdBotAutoBattleView(discord.ui.View):
                 f"🟢 **{self.defender.name}**: **{fmt_commit(self.def_commit)}** (power `{int(def_val)}`)\n\n"
                 f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
                 f"**{self.defender.name}** instantly readies **999x Radioactive Bird**!\n"
-                f"Press **⚔️ Fight!** to start the battle."
+                f"Press **⚔️ Fight!** to start the battle.{timer_line}"
             ),
             color=discord.Color.dark_red()
         )
+
+    async def _countdown(self):
+        try:
+            while not self.is_finished():
+                remaining = self._deadline - time.time()
+                if remaining <= 0:
+                    if self._resolving:
+                        return
+                    self._resolving = True
+                    try:
+                        await resolve_battle(
+                            self.bot, self, self.guild_id, self.attacker, self.defender,
+                            self.atk_commit, self.def_commit
+                        )
+                    except Exception as e:
+                        print(f"[birdbot] auto-resolve error: {e}")
+                    self.stop()
+                    return
+                msg = getattr(self, "_expiry_msg", None) or self.message
+                if msg:
+                    try:
+                        await msg.edit(embed=self.build_embed(remaining))
+                    except Exception:
+                        pass
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     @discord.ui.button(label="⚔️ Fight!", style=discord.ButtonStyle.green, row=2)
     async def fight(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1251,19 +1295,27 @@ class BirdBotAutoBattleView(discord.ui.View):
         await interaction.response.edit_message(content=None, embed=battling, view=None)
         await asyncio.sleep(1.5)
 
-        await resolve_battle(
-            self.bot, self, self.guild_id, self.attacker, self.defender,
-            self.atk_commit, self.def_commit
-        )
-        self.stop()
+        if self._resolving:
+            return
+        self._resolving = True
 
-    async def on_timeout(self):
-        msg = getattr(self, "_expiry_msg", None) or self.message
-        if msg:
+        try:
+            await resolve_battle(
+                self.bot, self, self.guild_id, self.attacker, self.defender,
+                self.atk_commit, self.def_commit
+            )
+        except Exception as e:
+            print(f"[birdbot] resolve error: {e}")
+            import traceback
+            traceback.print_exc()
             try:
-                await msg.edit(content="⏰ The battle came to a stalemate and ended.", embed=None, view=None)
+                await interaction.edit_original_response(
+                    content="⚔️ The battle was resolved. Check the battle log!",
+                    embed=None, view=None
+                )
             except Exception:
                 pass
+        self.stop()
 
 
 async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commit, defender_commit):
