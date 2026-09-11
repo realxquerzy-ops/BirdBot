@@ -49,6 +49,7 @@ class GamesCog(commands.Cog):
         "ultra_bird": {"name": "ULTRA BIRD", "desc": "Have every type of bird x5 in your inventory", "hidden": False},
         "god_bird": {"name": "GOD BIRD", "desc": "Have every type of bird x25 in your inventory", "hidden": False},
         "fight_birdbot": {"name": "Brave Fool", "desc": "Challenge BirdBot to a battle", "hidden": False},
+        "what?????": {"name": "What?????", "desc": "Actually beat the BirdBot in a battle", "hidden": False},
         "sell_first": {"name": "Cash Out", "desc": "Sell your first bird for BirdCoin", "hidden": False},
         "shop_broke": {"name": "Broke", "desc": "Try to buy something you can't afford at the shop", "hidden": False}
     }

@@ -1397,7 +1397,32 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
     elif taken:
         result_lines.append(f"💥 Took **{fmt_commit(Counter(taken))}**!")
         result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
-    result_lines.extend(loot_lines)
+    if loot:
+        result_lines.append(loot)
+
+    msg = getattr(view, "_expiry_msg", None) or view.message
+
+    if attacker_wins and defender.id == bot.user.id:
+        try:
+            games_cog = bot.get_cog("GamesCog")
+            if games_cog:
+                await games_cog.unlock_achievement(
+                    attacker.id, "what?????", getattr(msg, "channel", None), guild_id=guild_id_int
+                )
+        except Exception as e:
+            print(f"[birdbot] achievement error: {e}")
+        try:
+            guild = getattr(msg, "guild", None)
+            if guild:
+                role = discord.utils.get(guild.roles, name="What?????")
+                if role is None:
+                    role = await guild.create_role(name="What?????", color=discord.Color.gold())
+                member = guild.get_member(attacker.id)
+                if member and role not in member.roles:
+                    await member.add_roles(role)
+                result_lines.append(f"🏅 **{attacker.name}** earned the **What?????** role!")
+        except Exception as e:
+            print(f"[birdbot] role error: {e}")
 
     embed = discord.Embed(
         title="⚔️ Battle Over!",
@@ -1414,7 +1439,6 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
     except Exception as e:
         print(f"[battle-log] Failed to log battle: {e}")
 
-    msg = getattr(view, "_expiry_msg", None) or view.message
     if msg:
         try:
             await msg.edit(content=None, embed=embed)
