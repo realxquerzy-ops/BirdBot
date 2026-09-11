@@ -71,7 +71,7 @@ class GamesCog(commands.Cog):
                         description=f"<@{user_id}> has successfully unlocked:\n**{ach_info['name']}** — *{ach_info['desc']}*",
                         color=discord.Color.gold()
                     )
-                    await channel.send(embed=embed, delete_after=10)
+                    await channel.send(embed=embed)
                 except Exception as e:
                     print(f"Could not send achievement notification: {e}")
 
@@ -127,15 +127,19 @@ class GamesCog(commands.Cog):
         if count >= 3:
             self.bot.loop.create_task(self.unlock_achievement(user_id, "luck", channel, guild_id=guild_id))
 
-    @discord.app_commands.command(name="achievements", description="View your unlocked achievements")
+    @discord.app_commands.command(name="achievements", description="View your (or someone else's) unlocked achievements")
+    @discord.app_commands.describe(member="View another user's achievements")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
     @discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def achievements_command(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+    async def achievements_command(self, interaction: discord.Interaction, member: discord.Member = None):
+        await interaction.response.defer()
         guild_id = interaction.guild.id if interaction.guild else 0
-        user_id = interaction.user.id
+        target = member or interaction.user
 
-        user_achievements = self.bot.db.get_achievements(guild_id, user_id)
+        if target.id == self.bot.user.id:
+            user_achievements = list(self.ACHIEVEMENTS_LIST.keys())
+        else:
+            user_achievements = self.bot.db.get_achievements(guild_id, target.id)
 
         description = ""
         for ach_id, info in self.ACHIEVEMENTS_LIST.items():
@@ -147,11 +151,11 @@ class GamesCog(commands.Cog):
                 description += f"❌ *???*\n"
 
         embed = discord.Embed(
-            title=f"🏆 {interaction.user.name}'s Achievements",
+            title=f"🏆 {target.name}'s Achievements",
             description=description or "No achievements unlocked yet!",
             color=discord.Color.gold()
         )
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="bird", description="Display a bird")
     @discord.app_commands.allowed_installs(guilds=True, users=True)

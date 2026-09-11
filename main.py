@@ -174,6 +174,14 @@ async def on_ready():
     except Exception as e:
         print(f"Senkronizasyon hatası: {e}")
 
+    # BirdBot'a tüm başarımları kilitle (leaderboard'larda görünmez, envanter gibi)
+    games_cog = bot.get_cog("GamesCog")
+    if games_cog and hasattr(games_cog, "ACHIEVEMENTS_LIST"):
+        all_ach = list(games_cog.ACHIEVEMENTS_LIST.keys())
+        for guild in bot.guilds:
+            bot.db.save_achievements(guild.id, bot.user.id, all_ach)
+        print(f"[achievements] BirdBot'a {len(all_ach)} başarım eklendi ({len(bot.guilds)} sunucu).")
+
 bot.birds = BIRDS
 bot.bird_values = BIRD_VALUES
 bot.bird_values_lower = BIRD_VALUES_LOWER

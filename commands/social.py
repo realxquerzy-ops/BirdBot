@@ -145,7 +145,7 @@ class TradeConfirmView(discord.ui.View):
                             description=f"🏆 <@{user_id}> unlocked achievement: **{ach_info['name']}**!",
                             color=discord.Color.gold()
                         )
-                        await channel.send(embed=embed, delete_after=10)
+                        await channel.send(embed=embed)
                     except Exception as e:
                         print(f"Could not send achievement notification: {e}")
 
