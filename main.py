@@ -158,8 +158,7 @@ async def on_ready():
     print(f"[debug] presence_cache initialized with {count} members")
     
     for member in bot.get_all_members():
-        if member.id in bot.whitelisted_users:
-            print(f"[debug] owner {member} status={member.status}")
+        print(f"[debug] member {member} ({member.id}) status={bot.presence_cache.get(member.id, member.status)}")
 
     if os.path.exists("./commands"):
         for filename in os.listdir("./commands"):
