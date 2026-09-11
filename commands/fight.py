@@ -697,11 +697,13 @@ class AutoBattleView(discord.ui.View):
 
         powerups_cog = self.bot.get_cog("PowerupsCog")
         shield_saved = False
+        shield_broke = False
         taken = []
 
-        if powerups_cog and powerups_cog.consume_shield(guild_id_int, loser.id):
-            shield_saved = True
-        else:
+        if powerups_cog and powerups_cog.has_shield(guild_id_int, loser.id):
+            shield_saved = powerups_cog.consume_shield(guild_id_int, loser.id)
+            shield_broke = not shield_saved
+        if not shield_saved:
             expanded = []
             for bird, n in loser_commit.items():
                 expanded.extend([bird] * n)
@@ -729,9 +731,12 @@ class AutoBattleView(discord.ui.View):
             )
         if shield_saved:
             result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
-        elif taken:
-            result_lines.append(f"💥 Took **{fmt_commit(Counter(taken))}**!")
-            result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
+        else:
+            if shield_broke:
+                result_lines.append(f"💔 **{loser.name}**'s Shield shattered and couldn't protect them!")
+            if taken:
+                result_lines.append(f"💥 Took **{fmt_commit(Counter(taken))}**!")
+                result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
         if loot:
             result_lines.append(loot)
 
@@ -922,11 +927,13 @@ class FightLiveView(discord.ui.View):
 
         powerups_cog = self.bot.get_cog("PowerupsCog")
         shield_saved = False
+        shield_broke = False
         taken = []
 
-        if powerups_cog and powerups_cog.consume_shield(guild_id_int, loser.id):
-            shield_saved = True
-        else:
+        if powerups_cog and powerups_cog.has_shield(guild_id_int, loser.id):
+            shield_saved = powerups_cog.consume_shield(guild_id_int, loser.id)
+            shield_broke = not shield_saved
+        if not shield_saved:
             expanded = []
             for bird, n in loser_commit.items():
                 expanded.extend([bird] * n)
@@ -945,8 +952,11 @@ class FightLiveView(discord.ui.View):
         if shield_saved:
             result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
         else:
-            result_lines.append(f"💥 **{winner.mention}** won the battle and took **{fmt_commit(Counter(taken))}**!")
-            result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
+            if shield_broke:
+                result_lines.append(f"💔 **{loser.name}**'s Shield shattered and couldn't protect them!")
+            if taken:
+                result_lines.append(f"💥 **{winner.mention}** won the battle and took **{fmt_commit(Counter(taken))}**!")
+                result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
         if loot:
             result_lines.append(loot)
 
@@ -1359,11 +1369,13 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
 
     powerups_cog = bot.get_cog("PowerupsCog")
     shield_saved = False
+    shield_broke = False
     taken = []
 
-    if powerups_cog and powerups_cog.consume_shield(guild_id_int, loser.id):
-        shield_saved = True
-    else:
+    if powerups_cog and powerups_cog.has_shield(guild_id_int, loser.id):
+        shield_saved = powerups_cog.consume_shield(guild_id_int, loser.id)
+        shield_broke = not shield_saved
+    if not shield_saved:
         if loser.id == bot.user.id:
             taken = []
         else:
@@ -1394,7 +1406,9 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
         )
     if shield_saved:
         result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
-    elif taken:
+    elif shield_broke:
+        result_lines.append(f"💔 **{loser.name}**'s Shield shattered and couldn't protect them!")
+    if not shield_saved and taken:
         result_lines.append(f"💥 Took **{fmt_commit(Counter(taken))}**!")
         result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
     if loot:

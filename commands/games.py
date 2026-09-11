@@ -434,9 +434,11 @@ class GamesCog(commands.Cog):
             else:
                 powerups_cog = self.bot.get_cog("PowerupsCog")
                 shield_saved = False
-                if powerups_cog and powerups_cog.consume_shield(guild_id, user_id):
-                    shield_saved = True
-                else:
+                shield_broke = False
+                if powerups_cog and powerups_cog.has_shield(guild_id, user_id):
+                    shield_saved = powerups_cog.consume_shield(guild_id, user_id)
+                    shield_broke = not shield_saved
+                if not shield_saved:
                     remaining = []
                     removed = 0
                     for bird in user_birds:
@@ -462,7 +464,9 @@ class GamesCog(commands.Cog):
                     await self.unlock_achievement(user_id, "its_over", interaction.channel, guild_id)
 
                 description = f"💀 **{interaction.user.mention}** lost the gamble and their **{number}x {matched_bird_name}** vanished..."
-                if shield_saved:
+                if shield_broke:
+                    description += "\n💔 **Your Shield shattered and couldn't protect your birds!**"
+                elif shield_saved:
                     description += "\n🛡️ **Your Shield protected your birds!**"
 
                 embed = discord.Embed(
