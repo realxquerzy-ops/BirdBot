@@ -25,17 +25,14 @@ class ShopCog(commands.Cog):
         cog = self.bot.get_cog("PowerupsCog")
         return getattr(cog, "POWERUPS", {}) if cog else {}
 
-    @discord.app_commands.command(name="sell", description="Sell birds for BirdCoin (default: all of that bird)")
-    @discord.app_commands.describe(bird="Which bird to sell", count="How many to sell (leave empty to sell all)")
+    @discord.app_commands.command(name="sell", description="Sell birds for BirdCoin")
+    @discord.app_commands.describe(bird="Which bird to sell", count="How many to sell, or type 'all' to sell everything")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
-    async def sell(self, interaction: discord.Interaction, bird: str, count: int = 0):
+    async def sell(self, interaction: discord.Interaction, bird: str, count: str = "1"):
         await interaction.response.defer()
         if not interaction.guild:
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
-            return
-        if count < 0:
-            await interaction.followup.send("❌ Count must be 0 or more!", ephemeral=True)
             return
 
         canon = next(
@@ -55,7 +52,20 @@ class ShopCog(commands.Cog):
             await interaction.followup.send(f"❌ You don't have **{canon}** to sell!", ephemeral=True)
             return
 
-        n = owned if count == 0 else min(count, owned)
+        count_txt = count.strip().lower()
+        if count_txt == "all":
+            n = owned
+        else:
+            try:
+                n = int(count_txt)
+            except ValueError:
+                await interaction.followup.send("❌ Count must be a number or 'all'!", ephemeral=True)
+                return
+            if n < 1:
+                await interaction.followup.send("❌ Count must be at least 1!", ephemeral=True)
+                return
+            n = min(n, owned)
+
         removed = 0
         new_inv = []
         for b in inv:
