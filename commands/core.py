@@ -6,6 +6,34 @@ import discord
 from discord.ext import commands, tasks
 
 
+def generate_math_question():
+    a = random.randint(2, 12)
+    b = random.randint(2, 9)
+    c = random.randint(2, 8)
+    op2 = random.choice(["+", "x", "-"])
+    if random.random() < 0.5:
+        op1 = random.choice(["+", "x", "-"])
+        if op1 == "-" and b > a:
+            a, b = b, a
+        sub = a + b if op1 == "+" else (a * b if op1 == "x" else a - b)
+        expr = f"({a} {op1} {b}) {op2} {c}"
+        right = c
+    else:
+        op1 = random.choice(["+", "x", "-"])
+        if op1 == "-" and c > b:
+            b, c = c, b
+        sub = b + c if op1 == "+" else (b * c if op1 == "x" else b - c)
+        expr = f"{a} {op2} ({b} {op1} {c})"
+        right = a
+    if op2 == "+":
+        total = sub + right
+    elif op2 == "x":
+        total = sub * right
+    else:
+        total = sub - right
+    return expr, total
+
+
 class CoreCog(commands.Cog):
     MISSPELLS = {"burd", "berd", "bord", "birdd", "birt", "beard", "b1rd", "gbird", "birb"}
 
@@ -209,6 +237,42 @@ class CoreCog(commands.Cog):
             state["name"] = None
             await message.reply("💨 **The bird got spooked and flew away!** *(Distraction)*")
             return
+
+        if caught_bird == "Duolingo Bird":
+            if state.get("pending_user") and state["pending_user"] != user_id:
+                await message.reply("⏳ The **Duolingo Bird** is already being questioned — one at a time!")
+                return
+            state["pending_user"] = user_id
+
+            expr, answer = generate_math_question()
+            await message.reply(
+                f"🧮 **{message.author.mention}** a **Duolingo Bird** appeared, but it only accepts mathematicians!\n"
+                f"Solve to catch it:\n**{expr}**"
+            )
+
+            def check(m):
+                return m.author == message.author and m.channel == message.channel and not m.author.bot
+
+            try:
+                reply_msg = await self.bot.wait_for("message", check=check, timeout=30.0)
+            except asyncio.TimeoutError:
+                state["active"] = False
+                state["name"] = None
+                await message.channel.send("⏰ Time's up! The **Duolingo Bird** flew away!")
+                return
+
+            try:
+                user_answer = int(reply_msg.content.strip())
+            except ValueError:
+                user_answer = None
+
+            if user_answer is None or user_answer != answer:
+                state["active"] = False
+                state["name"] = None
+                await reply_msg.reply(f"❌ Wrong! The answer was **{answer}**. The **Duolingo Bird** flew away!")
+                return
+
+            await reply_msg.reply("✅ Correct! The **Duolingo Bird** is caught!")
 
         if user_id not in self.bot.fastest_times or catch_duration < self.bot.fastest_times[user_id]:
             self.bot.fastest_times[user_id] = catch_duration
