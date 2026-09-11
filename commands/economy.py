@@ -32,23 +32,42 @@ class EconomyCog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="inventory", description="View your caught birds inventory for this server")
+    @discord.app_commands.describe(member="View another user's inventory")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
-    async def inventory(self, interaction: discord.Interaction):
+    async def inventory(self, interaction: discord.Interaction, member: discord.Member = None):
         await interaction.response.defer()
         if not interaction.guild:
             await interaction.followup.send("❌ This command can only be used in a server!")
             return
 
         guild_id = interaction.guild.id
-        user_id = interaction.user.id
+        target = member or interaction.user
 
-        user_birds = self.bot.db.get_inventory(guild_id, user_id)
+        if target.id == self.bot.user.id:
+            BIRDBOT_COUNT = 2**31 - 1
+            bird_counts = {bird["name"]: BIRDBOT_COUNT for bird in self.bot.birds}
+            total_val = sum(self.bot.bird_values.get(name, 1) * count for name, count in bird_counts.items())
+            total_birds = sum(bird_counts.values())
+            inventory_text = "\n".join([
+                f"• **{bird}** (Value: {self.bot.bird_values.get(bird, 1)}): `{count:,}x`"
+                for bird, count in bird_counts.items()
+            ])
+            embed = discord.Embed(
+                title=f"📦 {target.name}'s Server Bird Inventory",
+                description=inventory_text + f"\n\n💎 **Total Inventory Value:** `{total_val:,}` points",
+                color=discord.Color.green()
+            )
+            embed.set_footer(text=f"Total Birds Caught Here: {total_birds:,}")
+            await interaction.followup.send(embed=embed)
+            return
+
+        user_birds = self.bot.db.get_inventory(guild_id, target.id)
 
         if not user_birds:
             embed = discord.Embed(
-                title=f"📦 {interaction.user.name}'s Server Inventory",
-                description="You haven't caught any birds in this server yet!",
+                title=f"📦 {target.name}'s Server Inventory",
+                description=f"{'You have' if target == interaction.user else target.name + ' has'} no birds in this server yet!",
                 color=discord.Color.red()
             )
             await interaction.followup.send(embed=embed)
@@ -59,7 +78,7 @@ class EconomyCog(commands.Cog):
         inventory_text = "\n".join([f"• **{bird}** (Value: {self.bot.bird_values.get(bird, 1)}): `{count}x`" for bird, count in bird_counts.items()])
 
         embed = discord.Embed(
-            title=f"📦 {interaction.user.name}'s Server Bird Inventory",
+            title=f"📦 {target.name}'s Server Bird Inventory",
             description=inventory_text + f"\n\n💎 **Total Inventory Value:** `{total_val}` points",
             color=discord.Color.green()
         )
@@ -92,6 +111,8 @@ class EconomyCog(commands.Cog):
         user_totals = []
         for row in rows:
             user_id = row[0]
+            if int(user_id) == self.bot.user.id:
+                continue
             birds = self.bot.db._loads_json(row[1])
             user_totals.append((user_id, self.get_inventory_value(birds), len(birds)))
 

@@ -38,6 +38,8 @@ class GlobalCog(commands.Cog):
                 server_inventories_map = {}
                 for row in rows:
                     g_id, u_id, birds_json = str(row[0]), str(row[1]), row[2]
+                    if int(u_id) == self.bot.user.id:
+                        continue
                     server_inventories_map.setdefault(g_id, {})[u_id] = self.bot.db._loads_json(birds_json)
 
                 server_stats = {}
@@ -99,6 +101,8 @@ class GlobalCog(commands.Cog):
             user_stats = {}
             for row in rows:
                 u_id = str(row[0])
+                if int(u_id) == self.bot.user.id:
+                    continue
                 birds_list = self.bot.db._loads_json(row[1])
                 if u_id not in user_stats:
                     user_stats[u_id] = {
