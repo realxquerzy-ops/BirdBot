@@ -11,73 +11,67 @@ class ShopCartView(discord.ui.View):
         self.cog = cog
         self.guild_id = guild_id
         self.user_id = user_id
-        self.selected = None
         self.message = None
 
         info = cog._powerup_info()
-        options = []
-        for key, price in cog.SHOP_PRICES.items():
+        for i, (key, price) in enumerate(cog.SHOP_PRICES.items()):
             p = info.get(key)
             name = p["name"] if p else key
-            desc = p["desc"] if p else ""
-            options.append(discord.SelectOption(
-                label=f"{name} — 🪙{cog.fmt_coin(price)}",
-                value=key,
-                description=desc,
-            ))
-        self.add_item(discord.ui.Select(
-            placeholder="Pick a powerup to buy...",
-            options=options,
-            min_values=1,
-            max_values=1,
-            row=0,
-        ))
+            emoji = "✨" if p and p["type"] == "self" else "🪃"
+            button = discord.ui.Button(
+                label=f"{name} — 🪙 {cog.fmt_coin(price)}",
+                emoji=emoji,
+                style=discord.ButtonStyle.primary,
+                row=i // 5,
+            )
 
-    async def _refresh(self, interaction):
+            async def _buy_cb(interaction: discord.Interaction, btn: discord.ui.Button, _key=key, _price=price):
+                await self._buy(interaction, _key, _price)
+
+            button.callback = _buy_cb
+            self.add_item(button)
+
+    async def _refresh(self):
         embed = self.cog.build_shop_embed(self.guild_id, self.user_id)
-        try:
-            await interaction.edit_original_response(embed=embed, view=self)
-        except Exception:
-            pass
+        if self.message:
+            try:
+                await self.message.edit(embed=embed, view=self)
+            except Exception:
+                pass
 
-    @discord.ui.button(label="🛒 Buy!", style=discord.ButtonStyle.green, row=1)
-    async def buy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _buy(self, interaction, key, price):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ Only the buyer can use this!", ephemeral=True)
             return
 
-        select = self.children[0]
-        if not select.values:
-            await interaction.response.send_message("❌ Pick a powerup first!", ephemeral=True)
-            return
-
-        key = select.values[0]
-        price = self.cog.SHOP_PRICES.get(key)
         info = self.cog._powerup_info().get(key)
         if price is None or not info:
             await interaction.response.send_message("❌ Unknown powerup!", ephemeral=True)
             return
+
+        await interaction.response.defer(ephemeral=True)
 
         balance = self.bot.db.get_birdcoin(self.guild_id, self.user_id)
         if balance < price:
             games_cog = self.bot.get_cog("GamesCog")
             if games_cog:
                 await games_cog.unlock_achievement(self.user_id, "shop_broke", interaction.channel, guild_id=self.guild_id)
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"❌ Not enough BirdCoin! Need 🪙`{self.cog.fmt_coin(price)}`, you have 🪙`{self.cog.fmt_coin(balance)}`.",
                 ephemeral=True
             )
+            await self._refresh()
             return
 
         self.bot.db.remove_birdcoin(self.guild_id, self.user_id, price)
         self.bot.db.add_powerup(self.guild_id, self.user_id, key, 1)
         new_balance = self.bot.db.get_birdcoin(self.guild_id, self.user_id)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"🛒 Bought **{info['name']}** for 🪙`{self.cog.fmt_coin(price)}`! New balance: 🪙`{self.cog.fmt_coin(new_balance)}`.",
             ephemeral=True
         )
-        await self._refresh(interaction)
+        await self._refresh()
 
     async def on_timeout(self):
         if self.message:
@@ -129,7 +123,7 @@ class ShopCog(commands.Cog):
             description="\n".join(lines),
             color=discord.Color.orange()
         )
-        embed.set_footer(text=f"🪙 Your balance: {self.fmt_coin(balance)} | Pick a powerup and press 🛒 Buy!")
+        embed.set_footer(text=f"🪙 Your balance: {self.fmt_coin(balance)} | Press a button to buy that powerup!")
         return embed
 
     @discord.app_commands.command(name="sell", description="Sell birds for BirdCoin")
