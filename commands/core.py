@@ -233,7 +233,11 @@ class CoreCog(commands.Cog):
                 "</powerups:0> - View your powerups and active effects\n"
                 "</use:0> - Use a powerup or sabotage another player\n"
                 "</birdpass:0> - View your BirdPass level and rewards\n"
-                "</daily:0> - Claim your daily reward"
+                "</daily:0> - Claim your daily reward\n"
+                "</sell:0> - Sell birds for BirdCoin\n"
+                "</shop:0> - View the BirdCoin shop\n"
+                "</buy:0> - Buy powerups with BirdCoin\n"
+                "</balance:0> - View your BirdCoin balance"
             ),
             color=discord.Color.blue()
         )

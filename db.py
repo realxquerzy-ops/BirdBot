@@ -203,6 +203,28 @@ class Database:
         )
         self.execute("DELETE FROM powerups WHERE qty <= 0")
 
+    def get_birdcoin(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT balance FROM birdcoin WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
+        return float(row[0]) if row and row[0] is not None else 0.0
+
+    def add_birdcoin(self, guild_id, user_id, amount):
+        self.execute(
+            """
+            INSERT INTO birdcoin (guild_id, user_id, balance) VALUES (%s, %s, %s)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET balance = birdcoin.balance + EXCLUDED.balance
+            """,
+            (guild_id, user_id, amount),
+        )
+
+    def remove_birdcoin(self, guild_id, user_id, amount):
+        self.execute(
+            "UPDATE birdcoin SET balance = GREATEST(balance - %s, 0) WHERE guild_id = %s AND user_id = %s",
+            (amount, guild_id, user_id),
+        )
+
     def log_battle(self, guild_id, attacker_id, defender_id, winner_id, attacker_birds, defender_birds, stolen_birds):
         self.execute(
             """

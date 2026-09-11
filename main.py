@@ -71,6 +71,13 @@ db.execute('''CREATE TABLE IF NOT EXISTS powerups (
     PRIMARY KEY (guild_id, user_id, powerup)
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS birdcoin (
+    guild_id BIGINT,
+    user_id BIGINT,
+    balance REAL DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id)
+)''')
+
 db.execute('''CREATE TABLE IF NOT EXISTS battle_log (
     id SERIAL PRIMARY KEY,
     guild_id BIGINT,
