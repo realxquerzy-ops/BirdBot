@@ -113,7 +113,8 @@ default_birds = [
     ("Tennis Bird", 1540321518440161360, 0.4, 26.0),
     ("Duolingo Bird", 1548026648258158593, 0.3, 30.0),
     ("Bird 618", 1540321587780124693, 0.2, 35.0),
-    ("Radioactive Bird", 1540372078660952175, 0.1, 50)
+    ("Radioactive Bird", 1540372078660952175, 0.1, 50),
+    ("Caseoh Bird", 1548030264167505920, 0.05, 75)
 ]
 
 for bird in default_birds:
