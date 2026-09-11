@@ -1371,17 +1371,12 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
             half = expanded[: len(expanded) // 2] if expanded else []
             taken = transfer_birds(bot, guild_id_int, loser.id, winner.id, half)
 
-    loot_lines = []
-    if powerups_cog:
-        for player in (attacker, defender):
-            if player.id == bot.user.id:
-                continue
-            if shield_saved and player.id == loser.id:
-                continue
-            drop = powerups_cog.random_drop()
-            if drop:
-                powerups_cog.bot.db.add_powerup(guild_id_int, player.id, drop, 1)
-                loot_lines.append(f"🎁 **{player.name}** looted: {powerups_cog.POWERUPS[drop]['name']}!")
+    loot = ""
+    if powerups_cog and not shield_saved and winner.id != bot.user.id:
+        drop = powerups_cog.random_drop()
+        if drop:
+            powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
+            loot = f"\n🎁 **{winner.name}** looted: {powerups_cog.POWERUPS[drop]['name']}!"
 
     result_lines = []
     if attacker_wins:
