@@ -449,7 +449,7 @@ class AutoBattleView(discord.ui.View):
         self.def_inv = def_inv
         self.phase = "waiting"  # waiting, battling, extension
         self._timer_task = None
-        self._deadline = time.time() + 20
+        self._deadline = time.time() + 15
         self._resolving = False
         
         bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
@@ -607,9 +607,13 @@ class AutoBattleView(discord.ui.View):
             return
         
         counts = Counter(self.def_inv)
-        max_allowed = counts.get(bird, 0)
-        
-        await interaction.response.send_modal(AutoBattleModal(self, bird, max_allowed))
+        committed = self.def_commit.get(bird, 0)
+        remaining = counts.get(bird, 0) - committed
+        if remaining < 1:
+            await interaction.response.send_message("❌ You already sent all of that bird!", ephemeral=True)
+            return
+
+        await interaction.response.send_modal(AutoBattleModal(self, bird, remaining))
 
     async def resolve_now(self, interaction: discord.Interaction):
         if interaction.user.id != self.defender.id:
@@ -688,10 +692,20 @@ class AutoBattleView(discord.ui.View):
                 loot = f"\n🎁 **{winner.name}** looted: {powerups_cog.POWERUPS[drop]['name']}!"
 
         result_lines = []
+        if attacker_wins:
+            result_lines.append(
+                f"⚔️ **{attacker.name}** attacked **{defender.name}** and **{defender.name}** couldn't defend! "
+                f"**{attacker.name}** wins!"
+            )
+        else:
+            result_lines.append(
+                f"⚔️ **{attacker.name}** attacked **{defender.name}** but **{defender.name}** defended successfully! "
+                f"**{defender.name}** wins!"
+            )
         if shield_saved:
             result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
-        else:
-            result_lines.append(f"💥 **{winner.mention}** won the battle and took **{fmt_commit(Counter(taken))}**!")
+        elif taken:
+            result_lines.append(f"💥 Took **{fmt_commit(Counter(taken))}**!")
             result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
         if loot:
             result_lines.append(loot)
@@ -699,7 +713,6 @@ class AutoBattleView(discord.ui.View):
         embed = discord.Embed(
             title="⚔️ Battle Over!",
             description=(
-                f"🔵 **{attacker.name}** (power `{int(atk_val)}`)  vs  🟢 **{defender.name}** (power `{int(def_val)}`)\n"
                 f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
                 + "\n".join(result_lines)
             ),
@@ -729,7 +742,7 @@ class AutoBattleView(discord.ui.View):
     async def _start_extension_phase(self, interaction):
         self.phase = "extension"
         self.def_commit = Counter()
-        self._deadline = time.time() + 10
+        self._deadline = time.time() + 15
         self._timer_task = asyncio.create_task(self._countdown())
         
         new_def_inv = self.bot.db.get_inventory(int(self.guild_id), self.defender.id)
@@ -766,12 +779,14 @@ class AutoBattleModal(discord.ui.Modal):
         self.add_item(self.count_input)
 
     async def on_submit(self, interaction: discord.Interaction):
+        counts = Counter(self.view.def_inv)
+        remaining = counts.get(self.bird, 0) - self.view.def_commit.get(self.bird, 0)
         try:
             val = int(self.count_input.value)
-            if val < 1 or val > self.max_count:
+            if val < 1 or val > remaining:
                 raise ValueError()
         except ValueError:
-            await interaction.response.send_message(f"❌ Enter a valid number between 1 and {self.max_count}!", ephemeral=True)
+            await interaction.response.send_message(f"❌ Enter a valid number between 1 and {remaining}!", ephemeral=True)
             return
 
         self.view.def_commit[self.bird] = self.view.def_commit.get(self.bird, 0) + val
@@ -1293,10 +1308,20 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
             loot = f"\n🎁 **{winner.name}** looted: {powerups_cog.POWERUPS[drop]['name']}!"
 
     result_lines = []
+    if attacker_wins:
+        result_lines.append(
+            f"⚔️ **{attacker.name}** attacked **{defender.name}** and **{defender.name}** couldn't defend! "
+            f"**{attacker.name}** wins!"
+        )
+    else:
+        result_lines.append(
+            f"⚔️ **{attacker.name}** attacked **{defender.name}** but **{defender.name}** defended successfully! "
+            f"**{defender.name}** wins!"
+        )
     if shield_saved:
         result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
-    else:
-        result_lines.append(f"💥 **{winner.mention}** won the battle and took **{fmt_commit(Counter(taken))}**!")
+    elif taken:
+        result_lines.append(f"💥 Took **{fmt_commit(Counter(taken))}**!")
         result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
     if loot:
         result_lines.append(loot)
@@ -1304,7 +1329,6 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
     embed = discord.Embed(
         title="⚔️ Battle Over!",
         description=(
-            f"🔵 **{attacker.name}** (power `{int(atk_val)}`)  vs  🟢 **{defender.name}** (power `{int(def_val)}`)\n"
             f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
             + "\n".join(result_lines)
         ),
