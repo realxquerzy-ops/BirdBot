@@ -83,7 +83,7 @@ class ShopCartView(discord.ui.View):
     async def on_timeout(self):
         if self.message:
             try:
-                await self.message.edit(view=None)
+                await self.message.delete()
             except Exception:
                 pass
 
