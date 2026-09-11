@@ -1,4 +1,5 @@
 import random
+import time
 
 import discord
 from discord.ext import commands
@@ -12,15 +13,25 @@ class PowerupsCog(commands.Cog):
         "sab_miss": {"name": "🪃 Distraction", "desc": "Makes a player's next catch fail (bird escapes)", "type": "sabotage"},
         "sab_half_xp": {"name": "📉 Demotivate", "desc": "Halves a player's BirdPass XP for their next 3 catches", "type": "sabotage"},
         "sab_steal": {"name": "🕵️ Pocket", "desc": "Instantly steal 1 random bird from a player", "type": "sabotage"},
+        "golden_gut": {"name": "🪙 Golden Gut", "desc": "+50% BirdCoin from your next 3 sells", "type": "self"},
+        "bigger_net": {"name": "🔭 Bigger Net", "desc": "Guaranteed double bird for your next 5 catches", "type": "self"},
+        "scarecrow": {"name": "🧹 Scarecrow", "desc": "Blocks the next sabotage aimed at you", "type": "self"},
+        "bird_whistle": {"name": "🐦 Bird Whistle", "desc": "Instantly call a wild bird to spawn", "type": "self"},
+        "muzzle": {"name": "🔇 Muzzle", "desc": "Silence a player for 10 seconds", "type": "sabotage"},
     }
 
     DROP_WEIGHTS = {
-        "shield": 20,
-        "double_xp": 25,
-        "double_catch": 15,
-        "sab_miss": 15,
-        "sab_half_xp": 15,
-        "sab_steal": 10,
+        "shield": 15,
+        "double_xp": 20,
+        "double_catch": 12,
+        "sab_miss": 12,
+        "sab_half_xp": 12,
+        "sab_steal": 8,
+        "golden_gut": 10,
+        "bigger_net": 10,
+        "scarecrow": 10,
+        "bird_whistle": 4,
+        "muzzle": 8,
     }
 
     def __init__(self, bot):
@@ -51,13 +62,48 @@ class PowerupsCog(commands.Cog):
             entry["double_xp"] -= 1
             if entry.get("double_xp", 0) <= 0:
                 entry.pop("double_xp", None)
-        double_catch = False
+        double_chance = 0.0
+        double_icon = ""
         if entry.get("double_catch", 0) > 0:
-            double_catch = True
+            double_chance = 0.20
+            double_icon = "🍀"
             entry["double_catch"] -= 1
             if entry.get("double_catch", 0) <= 0:
                 entry.pop("double_catch", None)
-        return xp_mult, double_catch
+        if entry.get("bigger_net", 0) > 0:
+            double_chance = 1.0
+            double_icon = "🔭"
+            entry["bigger_net"] -= 1
+            if entry.get("bigger_net", 0) <= 0:
+                entry.pop("bigger_net", None)
+        return xp_mult, double_chance, double_icon
+
+    def consume_sell_boost(self, guild_id, user_id):
+        entry = self._self_entry(guild_id, user_id)
+        if entry.get("golden_gut", 0) > 0:
+            entry["golden_gut"] -= 1
+            if entry.get("golden_gut", 0) <= 0:
+                entry.pop("golden_gut", None)
+            return True
+        return False
+
+    def consume_scarecrow(self, guild_id, user_id):
+        entry = self._self_entry(guild_id, user_id)
+        if entry.get("scarecrow", 0) > 0:
+            entry["scarecrow"] -= 1
+            if entry.get("scarecrow", 0) <= 0:
+                entry.pop("scarecrow", None)
+            return True
+        return False
+
+    def is_muzzled(self, guild_id, user_id):
+        entry = self._sabo_entry(guild_id, user_id)
+        until = entry.get("muzzle_until", 0)
+        if until and time.time() < until:
+            return True
+        if until:
+            entry.pop("muzzle_until", None)
+        return False
 
     def consume_miss(self, guild_id, user_id):
         entry = self._sabo_entry(guild_id, user_id)
@@ -96,6 +142,12 @@ class PowerupsCog(commands.Cog):
             parts.append(f"⚡ Double XP: `{entry['double_xp']}` catches left")
         if entry.get("double_catch", 0) > 0:
             parts.append(f"🍀 Lucky Net: `{entry['double_catch']}` catches left")
+        if entry.get("bigger_net", 0) > 0:
+            parts.append(f"🔭 Bigger Net: `{entry['bigger_net']}` catches left")
+        if entry.get("golden_gut", 0) > 0:
+            parts.append(f"🪙 Golden Gut: `{entry['golden_gut']}` sells left")
+        if entry.get("scarecrow", 0) > 0:
+            parts.append("🧹 Scarecrow: ready")
         return " | ".join(parts) if parts else None
 
     @discord.app_commands.command(name="powerups", description="View your powerups and active effects")
@@ -141,6 +193,11 @@ class PowerupsCog(commands.Cog):
         discord.app_commands.Choice(name="🪃 Distraction", value="sab_miss"),
         discord.app_commands.Choice(name="📉 Demotivate", value="sab_half_xp"),
         discord.app_commands.Choice(name="🕵️ Pocket", value="sab_steal"),
+        discord.app_commands.Choice(name="🪙 Golden Gut", value="golden_gut"),
+        discord.app_commands.Choice(name="🔭 Bigger Net", value="bigger_net"),
+        discord.app_commands.Choice(name="🧹 Scarecrow", value="scarecrow"),
+        discord.app_commands.Choice(name="🐦 Bird Whistle", value="bird_whistle"),
+        discord.app_commands.Choice(name="🔇 Muzzle", value="muzzle"),
     ])
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
@@ -181,6 +238,15 @@ class PowerupsCog(commands.Cog):
                     await interaction.followup.send("❌ That player has no birds to steal!", ephemeral=True)
                     return
 
+            if powerup in ("sab_miss", "sab_half_xp", "sab_steal", "muzzle") and self.consume_scarecrow(guild_id, member.id):
+                embed = discord.Embed(
+                    title="🧹 Scarecrow Blocked!",
+                    description=f"**{member.mention}**'s Scarecrow blocked **{interaction.user.mention}**'s **{info['name']}**!",
+                    color=discord.Color.blue()
+                )
+                await interaction.followup.send(embed=embed)
+                return
+
             self.bot.db.remove_powerup(guild_id, user_id, powerup, 1)
 
             if powerup == "shield":
@@ -216,6 +282,33 @@ class PowerupsCog(commands.Cog):
                 my_inv.append(stolen)
                 self.bot.db.save_inventory(guild_id, user_id, my_inv)
                 desc = f"🕵️ **{interaction.user.mention}** pickpocketed **{member.mention}** and stole **1x {stolen}**!"
+
+            elif powerup == "golden_gut":
+                entry = self._self_entry(guild_id, user_id)
+                entry["golden_gut"] = entry.get("golden_gut", 0) + 3
+                desc = f"🪙 **{interaction.user.mention}** activated Golden Gut! +50% BirdCoin on the next 3 sells."
+
+            elif powerup == "bigger_net":
+                entry = self._self_entry(guild_id, user_id)
+                entry["bigger_net"] = entry.get("bigger_net", 0) + 5
+                desc = f"🔭 **{interaction.user.mention}** activated Bigger Net! Guaranteed double birds for the next 5 catches."
+
+            elif powerup == "scarecrow":
+                entry = self._self_entry(guild_id, user_id)
+                entry["scarecrow"] = entry.get("scarecrow", 0) + 1
+                desc = f"🧹 **{interaction.user.mention}** set up a Scarecrow! The next sabotage aimed at them will be blocked."
+
+            elif powerup == "bird_whistle":
+                core_cog = self.bot.get_cog("CoreCog")
+                ok = False
+                if core_cog:
+                    ok = await core_cog.force_spawn(guild_id, source=f"{interaction.user.name}'s Whistle")
+                desc = "🐦 You blew the whistle — a wild bird appeared!" if ok else "💨 You blew the whistle, but a bird is already out..."
+
+            elif powerup == "muzzle":
+                entry = self._sabo_entry(guild_id, member.id)
+                entry["muzzle_until"] = time.time() + 10
+                desc = f"🔇 **{interaction.user.mention}** muzzled **{member.mention}** for 10 seconds!"
 
             embed = discord.Embed(
                 title=f"🎒 {info['name']} Used!",

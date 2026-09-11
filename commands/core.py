@@ -83,12 +83,62 @@ class CoreCog(commands.Cog):
         await self.bot.wait_until_ready()
         await asyncio.sleep(5)
 
+    async def force_spawn(self, guild_id, source=None):
+        guild_id = str(guild_id)
+        try:
+            state = self.bot.spawn_states.get(guild_id)
+            if state is None:
+                state = self._new_spawn_state()
+                self.bot.spawn_states[guild_id] = state
+            if state["active"]:
+                return False
+
+            channel_id = self.bot.server_settings.get(guild_id)
+            if not channel_id:
+                return False
+            channel = self.bot.get_channel(int(channel_id))
+            if not channel:
+                channel = await self.bot.fetch_channel(int(channel_id))
+
+            bird = random.choices(self.bot.birds, weights=self.spawn_weights, k=1)[0]
+            state["active"] = True
+            state["spawn_time"] = time.time()
+            state["name"] = bird["name"]
+
+            sticker = None
+            try:
+                sticker = await self.bot.fetch_sticker(bird["sticker_id"])
+            except Exception:
+                pass
+
+            content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
+            if source:
+                content_text += f" *({source})*"
+            if sticker:
+                await channel.send(content=content_text, stickers=[sticker])
+            else:
+                await channel.send(content=content_text)
+            return True
+        except Exception as e:
+            print(f"Error in force_spawn: {e}")
+            return False
+
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
             return
 
         self.bot.last_active[message.author.id] = time.time()
+
+        if message.guild:
+            powerups_cog = self.bot.get_cog("PowerupsCog")
+            if powerups_cog and powerups_cog.is_muzzled(int(message.guild.id), message.author.id):
+                try:
+                    if message.channel.permissions_for(message.guild.me).manage_messages:
+                        await message.delete()
+                except Exception:
+                    pass
+                return
 
         content_lower = message.content.lower().strip()
         user_id = str(message.author.id)
@@ -167,17 +217,18 @@ class CoreCog(commands.Cog):
         state["name"] = None
 
         xp_mult = 1.0
-        double_catch = False
+        double_chance = 0.0
+        double_icon = ""
         doubled = False
         if powerups_cog:
-            self_mult, double_catch = powerups_cog.catch_effects(guild_id_int, user_id_int)
+            self_mult, double_chance, double_icon = powerups_cog.catch_effects(guild_id_int, user_id_int)
             if powerups_cog.consume_half_xp(guild_id_int, user_id_int):
                 xp_mult *= 0.5
             xp_mult *= self_mult
 
         user_birds = self.bot.db.get_inventory(guild_id_int, user_id_int)
         user_birds.append(caught_bird)
-        if double_catch and random.random() < 0.20:
+        if double_chance and random.random() < double_chance:
             user_birds.append(caught_bird)
             doubled = True
         self.bot.db.save_inventory(guild_id_int, user_id_int, user_birds)
@@ -206,7 +257,7 @@ class CoreCog(commands.Cog):
             except Exception as e:
                 print(f"Error in birdpass xp: {e}")
 
-        extra = " *(... and a Lucky Net double! 🍀)*" if doubled else ""
+        extra = f" *(... and a double! {double_icon})*" if doubled else ""
         await message.reply(f"🎉 **{message.author.mention}** successfully caught the **{caught_bird}** in **{catch_duration:.2f}s**!{extra}")
 
     @discord.app_commands.command(name="help", description="Show bot commands")
@@ -235,8 +286,7 @@ class CoreCog(commands.Cog):
                 "</birdpass:0> - View your BirdPass level and rewards\n"
                 "</daily:0> - Claim your daily reward\n"
                 "</sell:0> - Sell birds for BirdCoin\n"
-                "</shop:0> - View the BirdCoin shop\n"
-                "</buy:0> - Buy powerups with BirdCoin\n"
+                "</shop:0> - Buy powerups with BirdCoin\n"
                 "</balance:0> - View your BirdCoin balance"
             ),
             color=discord.Color.blue()

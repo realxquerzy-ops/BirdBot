@@ -4,6 +4,89 @@ import discord
 from discord.ext import commands
 
 
+class ShopCartView(discord.ui.View):
+    def __init__(self, bot, cog, guild_id, user_id):
+        super().__init__(timeout=60)
+        self.bot = bot
+        self.cog = cog
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.selected = None
+        self.message = None
+
+        info = cog._powerup_info()
+        options = []
+        for key, price in cog.SHOP_PRICES.items():
+            p = info.get(key)
+            name = p["name"] if p else key
+            desc = p["desc"] if p else ""
+            options.append(discord.SelectOption(
+                label=f"{name} — 🪙{cog.fmt_coin(price)}",
+                value=key,
+                description=desc,
+            ))
+        self.add_item(discord.ui.Select(
+            placeholder="Pick a powerup to buy...",
+            options=options,
+            min_values=1,
+            max_values=1,
+            row=0,
+        ))
+
+    async def _refresh(self, interaction):
+        embed = self.cog.build_shop_embed(self.guild_id, self.user_id)
+        try:
+            await interaction.edit_original_response(embed=embed, view=self)
+        except Exception:
+            pass
+
+    @discord.ui.button(label="🛒 Buy!", style=discord.ButtonStyle.green, row=1)
+    async def buy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the buyer can use this!", ephemeral=True)
+            return
+
+        select = self.children[0]
+        if not select.values:
+            await interaction.response.send_message("❌ Pick a powerup first!", ephemeral=True)
+            return
+
+        key = select.values[0]
+        price = self.cog.SHOP_PRICES.get(key)
+        info = self.cog._powerup_info().get(key)
+        if price is None or not info:
+            await interaction.response.send_message("❌ Unknown powerup!", ephemeral=True)
+            return
+
+        balance = self.bot.db.get_birdcoin(self.guild_id, self.user_id)
+        if balance < price:
+            games_cog = self.bot.get_cog("GamesCog")
+            if games_cog:
+                await games_cog.unlock_achievement(self.user_id, "shop_broke", interaction.channel, guild_id=self.guild_id)
+            await interaction.response.send_message(
+                f"❌ Not enough BirdCoin! Need 🪙`{self.cog.fmt_coin(price)}`, you have 🪙`{self.cog.fmt_coin(balance)}`.",
+                ephemeral=True
+            )
+            return
+
+        self.bot.db.remove_birdcoin(self.guild_id, self.user_id, price)
+        self.bot.db.add_powerup(self.guild_id, self.user_id, key, 1)
+        new_balance = self.bot.db.get_birdcoin(self.guild_id, self.user_id)
+
+        await interaction.response.send_message(
+            f"🛒 Bought **{info['name']}** for 🪙`{self.cog.fmt_coin(price)}`! New balance: 🪙`{self.cog.fmt_coin(new_balance)}`.",
+            ephemeral=True
+        )
+        await self._refresh(interaction)
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                await self.message.edit(view=None)
+            except Exception:
+                pass
+
+
 class ShopCog(commands.Cog):
     SHOP_PRICES = {
         "shield": 40,
@@ -12,6 +95,11 @@ class ShopCog(commands.Cog):
         "sab_miss": 45,
         "sab_half_xp": 30,
         "sab_steal": 60,
+        "golden_gut": 20,
+        "bigger_net": 30,
+        "scarecrow": 35,
+        "bird_whistle": 60,
+        "muzzle": 45,
     }
 
     def __init__(self, bot):
@@ -24,6 +112,25 @@ class ShopCog(commands.Cog):
     def _powerup_info(self):
         cog = self.bot.get_cog("PowerupsCog")
         return getattr(cog, "POWERUPS", {}) if cog else {}
+
+    def build_shop_embed(self, guild_id, user_id):
+        info = self._powerup_info()
+        lines = []
+        for key, price in self.SHOP_PRICES.items():
+            p = info.get(key)
+            name = p["name"] if p else key
+            desc = p["desc"] if p else "?"
+            kind = "✨" if p and p["type"] == "self" else "🪃"
+            lines.append(f"**{name}** — 🪙 `{price}` *({kind})*\n└ {desc}")
+
+        balance = self.bot.db.get_birdcoin(guild_id, user_id)
+        embed = discord.Embed(
+            title="🛒 Bird Power Shop",
+            description="\n".join(lines),
+            color=discord.Color.orange()
+        )
+        embed.set_footer(text=f"🪙 Your balance: {self.fmt_coin(balance)} | Pick a powerup and press 🛒 Buy!")
+        return embed
 
     @discord.app_commands.command(name="sell", description="Sell birds for BirdCoin")
     @discord.app_commands.describe(bird="Which bird to sell", count="How many to sell, or type 'all' to sell everything")
@@ -77,6 +184,11 @@ class ShopCog(commands.Cog):
 
         value = self.bot.bird_values.get(canon, 1)
         earned = value * n
+        boost = False
+        powerups_cog = self.bot.get_cog("PowerupsCog")
+        if powerups_cog and powerups_cog.consume_sell_boost(guild_id, user_id):
+            boost = True
+            earned = round(earned * 1.5, 2)
         self.bot.db.add_birdcoin(guild_id, user_id, earned)
         new_balance = self.bot.db.get_birdcoin(guild_id, user_id)
 
@@ -88,11 +200,12 @@ class ShopCog(commands.Cog):
             amount_txt = f"all `{n}x`"
         else:
             amount_txt = f"`{n}x` (you still have `{owned - n}x`)"
+        boost_txt = "\n🪙 Golden Gut: **+50%** BirdCoin applied!" if boost else ""
         embed = discord.Embed(
             title="💸 Sale Complete!",
             description=(
                 f"Sold {amount_txt} **{canon}** for 🪙 **{self.fmt_coin(earned)} BirdCoin**!\n"
-                f"🪙 New balance: `{self.fmt_coin(new_balance)}`"
+                f"🪙 New balance: `{self.fmt_coin(new_balance)}`{boost_txt}"
             ),
             color=discord.Color.green()
         )
@@ -124,7 +237,7 @@ class ShopCog(commands.Cog):
         embed.set_footer(text="Earn BirdCoin by selling birds with /sell, spend it in /shop!")
         await interaction.followup.send(embed=embed)
 
-    @discord.app_commands.command(name="shop", description="View the BirdCoin powerup shop")
+    @discord.app_commands.command(name="shop", description="Buy powerups with BirdCoin")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def shop(self, interaction: discord.Interaction):
@@ -135,81 +248,10 @@ class ShopCog(commands.Cog):
 
         guild_id = interaction.guild.id
         user_id = interaction.user.id
-        info = self._powerup_info()
 
-        lines = []
-        for key, price in self.SHOP_PRICES.items():
-            p = info.get(key)
-            name = p["name"] if p else key
-            desc = p["desc"] if p else "?"
-            kind = "✨ self" if p and p["type"] == "self" else "🪃 sabotage"
-            lines.append(f"**{name}** — 🪙 `{price}` *({kind})*\n└ {desc}")
-
-        balance = self.bot.db.get_birdcoin(guild_id, user_id)
-        embed = discord.Embed(
-            title="🛒 Bird Power Shop",
-            description="\n".join(lines),
-            color=discord.Color.orange()
-        )
-        embed.set_footer(text=f"🪙 Your balance: {self.fmt_coin(balance)} | Buy with /buy, earn with /sell!")
-        await interaction.followup.send(embed=embed)
-
-    @discord.app_commands.command(name="buy", description="Buy a powerup with BirdCoin")
-    @discord.app_commands.describe(powerup="Which powerup to buy", count="How many to buy (default 1)")
-    @discord.app_commands.choices(powerup=[
-        discord.app_commands.Choice(name="🛡️ Shield", value="shield"),
-        discord.app_commands.Choice(name="⚡ Double XP", value="double_xp"),
-        discord.app_commands.Choice(name="🍀 Lucky Net", value="double_catch"),
-        discord.app_commands.Choice(name="🪃 Distraction", value="sab_miss"),
-        discord.app_commands.Choice(name="📉 Demotivate", value="sab_half_xp"),
-        discord.app_commands.Choice(name="🕵️ Pocket", value="sab_steal"),
-    ])
-    @discord.app_commands.allowed_installs(guilds=True, users=False)
-    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
-    async def buy(self, interaction: discord.Interaction, powerup: str, count: int = 1):
-        await interaction.response.defer()
-        if not interaction.guild:
-            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
-            return
-        if count < 1:
-            await interaction.followup.send("❌ Count must be at least 1!", ephemeral=True)
-            return
-
-        price = self.SHOP_PRICES.get(powerup)
-        info = self._powerup_info().get(powerup)
-        if price is None or not info:
-            await interaction.followup.send("❌ Unknown powerup!", ephemeral=True)
-            return
-
-        guild_id = interaction.guild.id
-        user_id = interaction.user.id
-        cost = price * count
-        balance = self.bot.db.get_birdcoin(guild_id, user_id)
-
-        if balance < cost:
-            games_cog = self.bot.get_cog("GamesCog")
-            if games_cog:
-                await games_cog.unlock_achievement(user_id, "shop_broke", interaction.channel, guild_id=guild_id)
-            await interaction.followup.send(
-                f"❌ Not enough BirdCoin! You need 🪙 `{self.fmt_coin(cost)}` but only have 🪙 `{self.fmt_coin(balance)}`.",
-                ephemeral=True
-            )
-            return
-
-        self.bot.db.remove_birdcoin(guild_id, user_id, cost)
-        self.bot.db.add_powerup(guild_id, user_id, powerup, count)
-        new_balance = self.bot.db.get_birdcoin(guild_id, user_id)
-
-        embed = discord.Embed(
-            title="🛒 Purchase Complete!",
-            description=(
-                f"Bought **{info['name']}** `{count}x` for 🪙 **{self.fmt_coin(cost)} BirdCoin**!\n"
-                f"🎒 Added to your powerups — use with /use.\n"
-                f"🪙 New balance: `{self.fmt_coin(new_balance)}`"
-            ),
-            color=discord.Color.orange()
-        )
-        await interaction.followup.send(embed=embed)
+        view = ShopCartView(self.bot, self, guild_id, user_id)
+        msg = await interaction.followup.send(embed=self.build_shop_embed(guild_id, user_id), view=view)
+        view.message = msg
 
 
 async def setup(bot):
