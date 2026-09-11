@@ -30,7 +30,11 @@ class MultiQuantityModal(discord.ui.Modal):
             return
 
         bird_name = self.select_item.selected_bird_temp
-        self.view_instance.add_offer(self.select_item.owner_id, bird_name, val)
+        ok = self.view_instance.add_offer(self.select_item.owner_id, bird_name, val)
+
+        if not ok:
+            await interaction.response.send_message("❌ You can only put up to 9 different bird types in a trade!", ephemeral=True)
+            return
 
         if hasattr(self.view_instance, "confirmed_users"):
             self.view_instance.confirmed_users.clear()
@@ -77,6 +81,8 @@ class TradeSelect(discord.ui.Select):
 
 
 class TradeConfirmView(discord.ui.View):
+    MAX_SLOTS = 9
+
     def __init__(self, bot, initiator, target, guild_id):
         super().__init__(timeout=60)
         self.bot = bot
@@ -102,29 +108,40 @@ class TradeConfirmView(discord.ui.View):
         self.add_item(self.target_select)
 
     def add_offer(self, user_id, bird_name, count):
-        self.offers[user_id][bird_name] = count
+        offer = self.offers[user_id]
+        if bird_name in offer:
+            offer[bird_name] = count
+            return True
+        if len(offer) >= self.MAX_SLOTS:
+            return False
+        offer[bird_name] = count
+        return True
 
     def format_offer_list(self, user_id):
         user_offer = self.offers.get(user_id, {})
         if not user_offer:
             return "Nothing selected"
 
-        items = []
-        for bird, count in user_offer.items():
-            items.append(f"`{count}x {bird}`")
-        return ", ".join(items)
+        items = [
+            f"`{i}. {count}x {bird}`"
+            for i, (bird, count) in enumerate(user_offer.items(), 1)
+        ]
+        return "\n".join(items)
 
     def update_status_text(self):
         init_offer_str = self.format_offer_list(self.initiator.id)
         target_offer_str = self.format_offer_list(self.target.id)
+
+        init_count = len(self.offers.get(self.initiator.id, {}))
+        target_count = len(self.offers.get(self.target.id, {}))
 
         init_status = "✅ Confirmed" if self.initiator.id in self.confirmed_users else "⏳ Pending..."
         target_status = "✅ Confirmed" if self.target.id in self.confirmed_users else "⏳ Pending..."
 
         return (
             f"🤝 **Active Trade** between **{self.initiator.name}** and **{self.target.name}**\n\n"
-            f"🔵 **{self.initiator.name}'s Offer:**\n{init_offer_str} — *({init_status})*\n\n"
-            f"🟢 **{self.target.name}'s Offer:**\n{target_offer_str} — *({target_status})*"
+            f"🔵 **{self.initiator.name}'s Offer:** ({init_count}/{self.MAX_SLOTS} slots)\n{init_offer_str} — *({init_status})*\n\n"
+            f"🟢 **{self.target.name}'s Offer:** ({target_count}/{self.MAX_SLOTS} slots)\n{target_offer_str} — *({target_status})*"
         )
 
     async def unlock_achievement(self, user_id, ach_id, channel=None):
