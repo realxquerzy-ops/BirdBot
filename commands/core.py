@@ -11,26 +11,25 @@ def generate_math_question():
     b = random.randint(2, 9)
     c = random.randint(2, 8)
     op2 = random.choice(["+", "x", "-"])
+    op1 = random.choice(["+", "x", "-"])
     if random.random() < 0.5:
-        op1 = random.choice(["+", "x", "-"])
         if op1 == "-" and b > a:
             a, b = b, a
         sub = a + b if op1 == "+" else (a * b if op1 == "x" else a - b)
         expr = f"({a} {op1} {b}) {op2} {c}"
-        right = c
+        left, right = sub, c
     else:
-        op1 = random.choice(["+", "x", "-"])
         if op1 == "-" and c > b:
             b, c = c, b
         sub = b + c if op1 == "+" else (b * c if op1 == "x" else b - c)
         expr = f"{a} {op2} ({b} {op1} {c})"
-        right = a
+        left, right = a, sub
     if op2 == "+":
-        total = sub + right
+        total = left + right
     elif op2 == "x":
-        total = sub * right
+        total = left * right
     else:
-        total = sub - right
+        total = left - right
     return expr, total
 
 
