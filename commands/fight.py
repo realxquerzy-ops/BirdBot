@@ -238,9 +238,10 @@ class FightSetupView(discord.ui.View):
             return
 
         view = FightChallengeView(self.bot, self.attacker, self.target, self.guild_id, dict(self.commit[self.attacker.id]))
+        remaining = view._deadline - time.time()
         view._expiry_msg = await interaction.channel.send(
             content=f"⚔️ **{self.attacker.mention}** has challenged **{self.target.mention}** to a battle!",
-            embed=view.build_embed(),
+            embed=view.build_embed(remaining),
             view=view
         )
         await interaction.edit_original_response(embed=discord.Embed(
