@@ -13,7 +13,7 @@ class BoostView(discord.ui.View):
         self.guild_id = guild_id
         self.guild_name = guild_name
 
-    @discord.ui.button(label="⚡ Boost — +3% rarity", style=discord.ButtonStyle.gold)
+    @discord.ui.button(label="⚡ Boost — +3% rarity", style=discord.ButtonStyle.premium)
     async def boost_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         current = self.cog.bot.db.get_guild_boost(self.guild_id)
         if current >= 20:

@@ -157,9 +157,9 @@ async def on_tree_error(interaction: discord.Interaction, error: Exception):
     traceback.print_exc()
     try:
         if interaction.response.is_done():
-            await interaction.followup.send("❌ Bir hata oluştu. Lütfen tekrar deneyin.", ephemeral=True)
+            await interaction.followup.send("❌ An error occurred. Please try again.", ephemeral=True)
         else:
-            await interaction.response.send_message("❌ Bir hata oluştu. Lütfen tekrar deneyin.", ephemeral=True)
+            await interaction.response.send_message("❌ An error occurred. Please try again.", ephemeral=True)
     except Exception:
         pass
 
