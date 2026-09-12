@@ -155,11 +155,12 @@ bot.presence_cache = {}
 async def on_tree_error(interaction: discord.Interaction, error: Exception):
     import traceback
     traceback.print_exc()
+    err_text = f"{error.__class__.__name__}: {error}" if error else "Unknown error"
     try:
         if interaction.response.is_done():
-            await interaction.followup.send("❌ An error occurred. Please try again.", ephemeral=True)
+            await interaction.followup.send(f"❌ An error occurred.\n```{err_text[:500]}```", ephemeral=True)
         else:
-            await interaction.response.send_message("❌ An error occurred. Please try again.", ephemeral=True)
+            await interaction.response.send_message(f"❌ An error occurred.\n```{err_text[:500]}```", ephemeral=True)
     except Exception:
         pass
 
