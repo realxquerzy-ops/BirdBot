@@ -210,6 +210,41 @@ class GamesCog(commands.Cog):
         except Exception as e:
             print(f"Could not send test bird message: {e}")
 
+    @discord.app_commands.command(name="facts", description="Get a random fact about the birds")
+    @discord.app_commands.allowed_installs(guilds=True, users=True)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    async def facts_command(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        facts_pool = []
+        if self.bot.birds:
+            bird = random.choice(self.bot.birds)
+            rarity_rank = sorted(self.bot.birds, key=lambda b: float(b["weight"]))
+            rank = next((i + 1 for i, b in enumerate(rarity_rank) if b["name"] == bird["name"]), 1)
+            total = len(rarity_rank)
+            facts_pool.append(
+                f"🟢 **{bird['name']}** is worth **{bird['value']}** BirdCoin and is **#{rank}** rarest out of **{total}** birds!"
+            )
+            facts_pool.append(
+                f"🪶 A wild **{bird['name']}** has a spawn weight of **{bird['weight']}** — the lower the weight, the rarer it is!"
+            )
+        facts_pool += [
+            "🦅 The **BirdBot** only listens when you type **bird** — misspelling it grants a secret achievement!",
+            "🌍 For a bird to spawn, its server needs a configured spawn channel.",
+            "🎲 Gambling your rarest bird can win you big — or lose everything. It's all luck!",
+            "🛡️ A Shield protects your birds with a 90% chance in fights and gambles.",
+            "🧮 **Duolingo Bird** only lets true mathematicians catch it.",
+            "💎 **Caseoh Bird** is currently the rarest bird in the entire game.",
+            "🐦 A **Bird Whistle** instantly calls a wild bird to spawn.",
+        ]
+
+        embed = discord.Embed(
+            title="🪽 Did you know?",
+            description=random.choice(facts_pool),
+            color=discord.Color.random()
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @discord.app_commands.command(name="spawn", description="Spawn a real catchable bird (whitelist only)")
     @discord.app_commands.describe(bird_name="Specific bird to spawn (leave empty for random)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
