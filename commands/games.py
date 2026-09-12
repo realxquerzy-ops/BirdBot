@@ -15,15 +15,17 @@ class BoostView(discord.ui.View):
 
     @discord.ui.button(label="⚡ Boost — +3% rarity", style=discord.ButtonStyle.primary)
     async def boost_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         current = self.cog.bot.db.get_guild_boost(self.guild_id)
         if current >= 20:
-            await interaction.response.send_message("❌ This server is already at max boost (20/20)!", ephemeral=True)
+            await interaction.followup.send("❌ This server is already at max boost (20/20)!", ephemeral=True)
             return
 
         cost = (current + 1) * 1000
         balance = self.cog.bot.db.get_birdcoin(self.guild_id, interaction.user.id)
         if balance < cost:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"❌ Not enough BirdCoin! You need **{cost:,}** coins (you have **{balance:,.0f}**).",
                 ephemeral=True
             )
@@ -36,7 +38,7 @@ class BoostView(discord.ui.View):
         if new >= 20:
             button.disabled = True
         embed = self.cog.build_boost_embed(self.guild_name, new, balance - cost)
-        await interaction.response.edit_message(content=None, embed=embed, view=self)
+        await interaction.edit_original_response(content=None, embed=embed, view=self)
 
 
 class GamesCog(commands.Cog):
