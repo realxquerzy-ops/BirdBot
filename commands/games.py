@@ -210,32 +210,38 @@ class GamesCog(commands.Cog):
         except Exception as e:
             print(f"Could not send test bird message: {e}")
 
-    @discord.app_commands.command(name="facts", description="Get a random fact about the birds")
+    @discord.app_commands.command(name="facts", description="Get a random interesting fact about birds")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
     @discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def facts_command(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
 
-        facts_pool = []
-        if self.bot.birds:
-            bird = random.choice(self.bot.birds)
-            rarity_rank = sorted(self.bot.birds, key=lambda b: float(b["weight"]))
-            rank = next((i + 1 for i, b in enumerate(rarity_rank) if b["name"] == bird["name"]), 1)
-            total = len(rarity_rank)
-            facts_pool.append(
-                f"🟢 **{bird['name']}** is worth **{bird['value']}** BirdCoin and is **#{rank}** rarest out of **{total}** birds!"
-            )
-            facts_pool.append(
-                f"🪶 A wild **{bird['name']}** has a spawn weight of **{bird['weight']}** — the lower the weight, the rarer it is!"
-            )
-        facts_pool += [
-            "🦅 The **BirdBot** only listens when you type **bird** — misspelling it grants a secret achievement!",
-            "🌍 For a bird to spawn, its server needs a configured spawn channel.",
-            "🎲 Gambling your rarest bird can win you big — or lose everything. It's all luck!",
-            "🛡️ A Shield protects your birds with a 90% chance in fights and gambles.",
-            "🧮 **Duolingo Bird** only lets true mathematicians catch it.",
-            "💎 **Caseoh Bird** is currently the rarest bird in the entire game.",
-            "🐦 A **Bird Whistle** instantly calls a wild bird to spawn.",
+        facts_pool = [
+            "🦅 Ostriches can outrun horses and, when threatened, male ostriches can roar like lions!",
+            "🐦 A hummingbird's heart beats up to 1,260 times per minute and it flaps its wings up to 80 times per second.",
+            "🕊️ Pigeons can recognize themselves in mirrors and can be trained to tell apart paintings by Picasso from ones by Monet.",
+            "🐧 Emperor penguins can dive deeper than 1,500 feet and hold their breath for over 20 minutes.",
+            "🦉 Owls can rotate their heads up to 270 degrees.",
+            "⚡ The peregrine falcon is the fastest animal on Earth, reaching over 240 mph during its dive.",
+            "🐦⬛ Crows hold 'funerals' for their dead and can remember the faces of humans who wronged them for years.",
+            "🪿 A group of flamingos is called a 'flamboyance'.",
+            "🦜 The lyrebird can perfectly mimic almost any sound — including chainsaws, camera shutters, and car alarms.",
+            "🪨 Woodpeckers have tongues that wrap around their brains, acting as shock absorbers while pecking up to 20 times per second.",
+            "🦕 Birds are the only surviving descendants of the dinosaurs — a chicken is closer to a T-Rex than to any other animal.",
+            "🌍 Arctic terns migrate from the Arctic to the Antarctic every year, flying about 44,000 miles in a lifetime.",
+            "🥚 Kiwis lay eggs up to 20% of their body weight — the largest egg-to-body ratio of any bird.",
+            "✈️ Some swifts stay airborne for up to 10 months straight, eating, drinking, and even sleeping on the wing.",
+            "🐔 Chickens can remember over 100 different human faces and can dream while sleeping.",
+            "🗣️ A budgerigar named Puck had a vocabulary of 1,728 words — the largest of any bird on record.",
+            "🐟 Puffins can carry up to a dozen fish in their beaks at once thanks to tiny barbs on their tongues.",
+            "🐧 The fastest two-legged animal alive is the common ostrich, sprinting up to 43 mph.",
+            "🎵 Blackbirds can sing up to two dozen different songs, and some can dial in on humans to learn new calls.",
+            "🦩 Flamingos aren't born pink — they get their color from the shrimp and algae they eat.",
+            "🦉 The elf owl is smaller than a sparrow yet hunts scorpions in the desert at night.",
+            "🦅 Eagles can see a rabbit running from nearly 2 miles away — their eyesight is 4-8x sharper than a human's.",
+            "🐦 Albatrosses can sleep while flying, locking one half of their brain while gliding over the ocean.",
+            "🪶 Feathers are not just for flying — birds regrow lost feathers and some use shed feathers as camouflage in their nests.",
+            "🐦⬛ ravens can solve multi-step puzzles and have been seen rolling down snowy slopes just for fun.",
         ]
 
         embed = discord.Embed(
@@ -243,7 +249,7 @@ class GamesCog(commands.Cog):
             description=random.choice(facts_pool),
             color=discord.Color.random()
         )
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="spawn", description="Spawn a real catchable bird (whitelist only)")
     @discord.app_commands.describe(bird_name="Specific bird to spawn (leave empty for random)")
