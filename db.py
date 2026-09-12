@@ -103,7 +103,7 @@ class Database:
         )
 
     def get_all_birds(self):
-        rows = self.fetchall("SELECT name, sticker_id, weight, value FROM birds_data")
+        rows = self.fetchall("SELECT name, sticker_id, weight, value FROM birds_data ORDER BY weight DESC")
         return [
             {"name": r[0], "sticker_id": r[1], "weight": r[2], "value": r[3]}
             for r in rows
