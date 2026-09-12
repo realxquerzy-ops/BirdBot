@@ -3,6 +3,8 @@ from collections import Counter
 import discord
 from discord.ext import commands
 
+from commands._safe import log_error, safe_ack
+
 
 class MultiQuantityModal(discord.ui.Modal):
     def __init__(self, select_item, max_count, view_instance):
@@ -29,17 +31,21 @@ class MultiQuantityModal(discord.ui.Modal):
             await interaction.response.send_message(f"❌ Please enter a valid number between 1 and {self.max_count}!", ephemeral=True)
             return
 
-        bird_name = self.select_item.selected_bird_temp
-        ok = self.view_instance.add_offer(self.select_item.owner_id, bird_name, val)
+        try:
+            bird_name = self.select_item.selected_bird_temp
+            ok = self.view_instance.add_offer(self.select_item.owner_id, bird_name, val)
 
-        if not ok:
-            await interaction.response.send_message("❌ You can only put up to 9 different bird types in a trade!", ephemeral=True)
-            return
+            if not ok:
+                await interaction.response.send_message("❌ You can only put up to 9 different bird types in a trade!", ephemeral=True)
+                return
 
-        if hasattr(self.view_instance, "confirmed_users"):
-            self.view_instance.confirmed_users.clear()
+            if hasattr(self.view_instance, "confirmed_users"):
+                self.view_instance.confirmed_users.clear()
 
-        await interaction.response.edit_message(content=self.view_instance.update_status_text(), view=self.view_instance)
+            await interaction.response.edit_message(content=self.view_instance.update_status_text(), view=self.view_instance)
+        except Exception:
+            log_error()
+            await safe_ack(interaction)
 
 
 class TradeSelect(discord.ui.Select):
@@ -184,65 +190,69 @@ class TradeConfirmView(discord.ui.View):
 
         await interaction.response.defer()
 
-        guild_id_int = int(self.guild_id)
-        init_id = self.initiator.id
-        target_id = self.target.id
+        try:
+            guild_id_int = int(self.guild_id)
+            init_id = self.initiator.id
+            target_id = self.target.id
 
-        init_user_birds = self.bot.db.get_inventory(guild_id_int, init_id)
-        target_user_birds = self.bot.db.get_inventory(guild_id_int, target_id)
+            init_user_birds = self.bot.db.get_inventory(guild_id_int, init_id)
+            target_user_birds = self.bot.db.get_inventory(guild_id_int, target_id)
 
-        can_trade = True
-        for bird, count in self.offers[init_id].items():
-            if init_user_birds.count(bird) < count:
-                can_trade = False
-                break
-        for bird, count in self.offers[target_id].items():
-            if target_user_birds.count(bird) < count:
-                can_trade = False
-                break
+            can_trade = True
+            for bird, count in self.offers[init_id].items():
+                if init_user_birds.count(bird) < count:
+                    can_trade = False
+                    break
+            for bird, count in self.offers[target_id].items():
+                if target_user_birds.count(bird) < count:
+                    can_trade = False
+                    break
 
-        if not can_trade:
-            await interaction.followup.send("❌ Trade failed! One of the users no longer has enough of the selected birds.", ephemeral=True)
-            return
+            if not can_trade:
+                await interaction.followup.send("❌ Trade failed! One of the users no longer has enough of the selected birds.", ephemeral=True)
+                return
 
-        for bird, count in self.offers[init_id].items():
-            for _ in range(count):
-                init_user_birds.remove(bird)
-                target_user_birds.append(bird)
+            for bird, count in self.offers[init_id].items():
+                for _ in range(count):
+                    init_user_birds.remove(bird)
+                    target_user_birds.append(bird)
 
-        for bird, count in self.offers[target_id].items():
-            for _ in range(count):
-                target_user_birds.remove(bird)
-                init_user_birds.append(bird)
+            for bird, count in self.offers[target_id].items():
+                for _ in range(count):
+                    target_user_birds.remove(bird)
+                    init_user_birds.append(bird)
 
-        self.bot.db.save_inventory(guild_id_int, init_id, init_user_birds)
-        self.bot.db.save_inventory(guild_id_int, target_id, target_user_birds)
+            self.bot.db.save_inventory(guild_id_int, init_id, init_user_birds)
+            self.bot.db.save_inventory(guild_id_int, target_id, target_user_birds)
 
-        await self.unlock_achievement(self.initiator.id, "a_trade", interaction.channel)
-        await self.unlock_achievement(self.target.id, "a_trade", interaction.channel)
+            await self.unlock_achievement(self.initiator.id, "a_trade", interaction.channel)
+            await self.unlock_achievement(self.target.id, "a_trade", interaction.channel)
 
-        bird_values = {b["name"].lower(): b.get("value", 1) for b in self.bot.birds}
+            bird_values = {b["name"].lower(): b.get("value", 1) for b in self.bot.birds}
 
-        init_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[init_id].items())
-        target_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[target_id].items())
+            init_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[init_id].items())
+            target_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[target_id].items())
 
-        if init_val > target_val * 3:
-            await self.unlock_achievement(self.target.id, "scammer", interaction.channel)
-            await self.unlock_achievement(self.initiator.id, "scammed", interaction.channel)
-        elif target_val > init_val * 3:
-            await self.unlock_achievement(self.initiator.id, "scammer", interaction.channel)
-            await self.unlock_achievement(self.target.id, "scammed", interaction.channel)
+            if init_val > target_val * 3:
+                await self.unlock_achievement(self.target.id, "scammer", interaction.channel)
+                await self.unlock_achievement(self.initiator.id, "scammed", interaction.channel)
+            elif target_val > init_val * 3:
+                await self.unlock_achievement(self.initiator.id, "scammer", interaction.channel)
+                await self.unlock_achievement(self.target.id, "scammed", interaction.channel)
 
-        init_summary = self.format_offer_list(init_id)
-        target_summary = self.format_offer_list(target_id)
+            init_summary = self.format_offer_list(init_id)
+            target_summary = self.format_offer_list(target_id)
 
-        embed = discord.Embed(
-            title="🤝 Trade Successful!",
-            description=f"**{self.initiator.name}** gave {init_summary} and received {target_summary} from **{self.target.name}**!",
-            color=discord.Color.green()
-        )
-        await interaction.edit_original_response(content=None, embed=embed, view=None)
-        self.stop()
+            embed = discord.Embed(
+                title="🤝 Trade Successful!",
+                description=f"**{self.initiator.name}** gave {init_summary} and received {target_summary} from **{self.target.name}**!",
+                color=discord.Color.green()
+            )
+            await interaction.edit_original_response(content=None, embed=embed, view=None)
+            self.stop()
+        except Exception:
+            log_error()
+            await safe_ack(interaction)
 
     @discord.ui.button(label="Cancel / Decline", style=discord.ButtonStyle.red, row=2)
     async def cancel_trade(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -269,18 +279,22 @@ class TradeRequestView(discord.ui.View):
 
         await interaction.response.defer()
 
-        target_birds = self.bot.db.get_inventory(int(self.guild_id), self.target.id)
-        if not target_birds:
-            await interaction.followup.send("You don't have any birds to trade in this server!", ephemeral=True)
-            return
+        try:
+            target_birds = self.bot.db.get_inventory(int(self.guild_id), self.target.id)
+            if not target_birds:
+                await interaction.followup.send("You don't have any birds to trade in this server!", ephemeral=True)
+                return
 
-        view = TradeConfirmView(self.bot, self.initiator, self.target, self.guild_id)
-        content = (
-            f"🤝 **Active Trade** between **{self.initiator.name}** and **{self.target.name}**\n\n"
-            f"🔵 **{self.initiator.name}'s Offer:**\nNothing selected — *(⏳ Pending...)*\n\n"
-            f"🟢 **{self.target.name}'s Offer:**\nNothing selected — *(⏳ Pending...)*"
-        )
-        await interaction.edit_original_response(content=content, view=view)
+            view = TradeConfirmView(self.bot, self.initiator, self.target, self.guild_id)
+            content = (
+                f"🤝 **Active Trade** between **{self.initiator.name}** and **{self.target.name}**\n\n"
+                f"🔵 **{self.initiator.name}'s Offer:**\nNothing selected — *(⏳ Pending...)*\n\n"
+                f"🟢 **{self.target.name}'s Offer:**\nNothing selected — *(⏳ Pending...)*"
+            )
+            await interaction.edit_original_response(content=content, view=view)
+        except Exception:
+            log_error()
+            await safe_ack(interaction)
 
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.red)
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):

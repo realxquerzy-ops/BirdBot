@@ -7,6 +7,9 @@ import discord
 from discord.ext import commands
 
 
+from commands._safe import log_error, safe_ack
+
+
 def commit_value(bot, commit):
     return sum(bot.bird_values.get(b, 1) * n for b, n in commit.items())
 
@@ -446,15 +449,19 @@ class FightChallengeView(discord.ui.View):
 
         await interaction.response.defer()
 
-        def_inv = self.bot.db.get_inventory(int(self.guild_id), self.defender.id)
-        if not def_inv:
-            await interaction.followup.send("❌ You don't have any birds to fight with!", ephemeral=True)
-            return
+        try:
+            def_inv = self.bot.db.get_inventory(int(self.guild_id), self.defender.id)
+            if not def_inv:
+                await interaction.followup.send("❌ You don't have any birds to fight with!", ephemeral=True)
+                return
 
-        view = AutoBattleView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit), def_inv)
-        view._expiry_msg = interaction.message
-        await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
-        self.stop()
+            view = AutoBattleView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit), def_inv)
+            view._expiry_msg = interaction.message
+            await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
+            self.stop()
+        except Exception:
+            log_error()
+            await safe_ack(interaction)
 
     @discord.ui.button(label="🕶️ Ignore", style=discord.ButtonStyle.grey, row=1)
     async def ignore(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -647,7 +654,21 @@ class AutoBattleView(discord.ui.View):
         if not self.def_commit:
             await interaction.response.send_message("❌ Send at least one bird first!", ephemeral=True)
             return
-        await self._resolve_battle(interaction)
+        try:
+            await self._resolve_battle(interaction)
+        except Exception:
+            log_error()
+            await safe_ack(interaction, "⚔️ The battle was resolved. Check your inventory!")
+            try:
+                await self._finish(
+                    discord.Embed(
+                        title="⚔️ Battle Over!",
+                        description="The battle ended (resolved below).",
+                        color=discord.Color.blurple(),
+                    )
+                )
+            except Exception:
+                pass
 
     async def _resolve_battle(self, interaction):
         self.phase = "battling"
