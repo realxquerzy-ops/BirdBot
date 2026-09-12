@@ -251,6 +251,40 @@ class GamesCog(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
 
+    @discord.app_commands.command(name="boost", description="Boost this server's spawn rarity with BirdCoin (max 20)")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def boost_command(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        guild_id = interaction.guild.id
+        current = self.bot.db.get_guild_boost(guild_id)
+        if current >= 20:
+            await interaction.response.send_message("❌ This server is already at max boost (20/20)!", ephemeral=True)
+            return
+
+        cost = (current + 1) * 1000
+        balance = self.bot.db.get_birdcoin(guild_id, interaction.user.id)
+        if balance < cost:
+            await interaction.response.send_message(
+                f"❌ Not enough BirdCoin! You need **{cost:,}** coins (you have **{balance:,.0f}**).",
+                ephemeral=True
+            )
+            return
+
+        self.bot.db.remove_birdcoin(guild_id, interaction.user.id, cost)
+        self.bot.db.set_guild_boost(guild_id, current + 1)
+        new = current + 1
+
+        next_line = f"\nThe next boost costs **{(new + 1) * 1000:,}** coins." if new < 20 else "\nMax boost reached!"
+        await interaction.response.send_message(
+            f"⚡ **Boost activated! (Level {new}/20)**\n"
+            f"Bird spawns in this server are now **{new * 3}% rarer** — {cost:,} coins spent.{next_line}",
+            ephemeral=True
+        )
+
     @discord.app_commands.command(name="spawn", description="Spawn a real catchable bird (whitelist only)")
     @discord.app_commands.describe(bird_name="Specific bird to spawn (leave empty for random)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
@@ -300,7 +334,7 @@ class GamesCog(commands.Cog):
                 return
         else:
             core_cog = self.bot.get_cog("CoreCog")
-            weights = core_cog.spawn_weights if core_cog else [float(b.get("weight", 1)) for b in self.bot.birds]
+            weights = core_cog.spawn_weights_for(interaction.guild.id) if core_cog else [float(b.get("weight", 1)) for b in self.bot.birds]
             matched = random.choices(self.bot.birds, weights=weights, k=1)[0]
 
         state["active"] = True

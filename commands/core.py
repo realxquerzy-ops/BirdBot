@@ -52,6 +52,17 @@ class CoreCog(commands.Cog):
     def _new_spawn_state(self):
         return {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
 
+    def spawn_weights_for(self, guild_id):
+        boost = 0
+        try:
+            boost = self.bot.db.get_guild_boost(int(guild_id))
+        except Exception:
+            pass
+        if boost <= 0:
+            return self.spawn_weights
+        exp = max(0.4, 1.0 - 0.03 * boost)
+        return [float(bird["weight"]) ** exp for bird in self.bot.birds]
+
     @tasks.loop(seconds=30.0)
     async def bird_spawner(self):
         now = time.time()
@@ -77,7 +88,7 @@ class CoreCog(commands.Cog):
                     except Exception:
                         continue
 
-                bird = random.choices(self.bot.birds, weights=self.spawn_weights, k=1)[0]
+                bird = random.choices(self.bot.birds, weights=self.spawn_weights_for(guild_id), k=1)[0]
 
                 state["active"] = True
                 state["spawn_time"] = now
@@ -127,7 +138,7 @@ class CoreCog(commands.Cog):
             if not channel:
                 channel = await self.bot.fetch_channel(int(channel_id))
 
-            bird = random.choices(self.bot.birds, weights=self.spawn_weights, k=1)[0]
+            bird = random.choices(self.bot.birds, weights=self.spawn_weights_for(guild_id), k=1)[0]
             state["active"] = True
             state["spawn_time"] = time.time()
             state["name"] = bird["name"]

@@ -78,6 +78,11 @@ db.execute('''CREATE TABLE IF NOT EXISTS birdcoin (
     PRIMARY KEY (guild_id, user_id)
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS guild_boosts (
+    guild_id BIGINT PRIMARY KEY,
+    boosts INTEGER DEFAULT 0
+)''')
+
 db.execute('''CREATE TABLE IF NOT EXISTS battle_log (
     id SERIAL PRIMARY KEY,
     guild_id BIGINT,

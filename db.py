@@ -225,6 +225,22 @@ class Database:
             (amount, guild_id, user_id),
         )
 
+    def get_guild_boost(self, guild_id):
+        row = self.fetchone(
+            "SELECT boosts FROM guild_boosts WHERE guild_id = %s",
+            (int(guild_id),),
+        )
+        return int(row[0]) if row and row[0] is not None else 0
+
+    def set_guild_boost(self, guild_id, boosts):
+        self.execute(
+            """
+            INSERT INTO guild_boosts (guild_id, boosts) VALUES (%s, %s)
+            ON CONFLICT (guild_id) DO UPDATE SET boosts = EXCLUDED.boosts
+            """,
+            (int(guild_id), int(boosts)),
+        )
+
     def log_battle(self, guild_id, attacker_id, defender_id, winner_id, attacker_birds, defender_birds, stolen_birds):
         self.execute(
             """
