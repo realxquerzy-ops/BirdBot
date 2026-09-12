@@ -7,7 +7,7 @@ from discord.ext import commands
 
 class PowerupsCog(commands.Cog):
     POWERUPS = {
-        "shield": {"name": "🛡️ Shield", "desc": "80% chance to protect your birds from a gamble or fight loss", "type": "self"},
+        "shield": {"name": "🛡️ Shield", "desc": "90% chance to protect your birds from a gamble or fight loss", "type": "self"},
         "double_xp": {"name": "⚡ Double XP", "desc": "2x BirdPass XP for your next 5 catches", "type": "self"},
         "double_catch": {"name": "🍀 Lucky Net", "desc": "20% chance to double your bird for the next 5 catches", "type": "self"},
         "sab_miss": {"name": "🪃 Distraction", "desc": "Makes a player's next catch fail (bird escapes)", "type": "sabotage"},
@@ -130,7 +130,7 @@ class PowerupsCog(commands.Cog):
             entry["shield"] -= 1
             if entry.get("shield", 0) <= 0:
                 entry.pop("shield", None)
-            return random.random() < 0.8
+            return random.random() < 0.9
         return False
 
     def active_self_text(self, guild_id, user_id):
@@ -252,7 +252,7 @@ class PowerupsCog(commands.Cog):
             if powerup == "shield":
                 entry = self._self_entry(guild_id, user_id)
                 entry["shield"] = entry.get("shield", 0) + 1
-                desc = f"🛡️ **{interaction.user.mention}** equipped a Shield! 80% chance to protect them from the next loss."
+                desc = f"🛡️ **{interaction.user.mention}** equipped a Shield! 90% chance to protect them from the next loss."
 
             elif powerup == "double_xp":
                 entry = self._self_entry(guild_id, user_id)

@@ -90,7 +90,7 @@ class ShopCartView(discord.ui.View):
 
 class ShopCog(commands.Cog):
     SHOP_PRICES = {
-        "shield": 100,
+        "shield": 70,
         "double_xp": 25,
         "double_catch": 35,
         "sab_miss": 45,
