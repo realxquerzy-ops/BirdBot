@@ -251,6 +251,32 @@ class GamesCog(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
 
+    @discord.app_commands.command(name="boostinfo", description="Show this server's boost level")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def boostinfo_command(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        guild_id = interaction.guild.id
+        current = self.bot.db.get_guild_boost(guild_id)
+        pct = current * 3
+        next_cost = f"{(current + 1) * 1000:,} coins" if current < 20 else "Max reached"
+        progress = "🟩" * current + "⬜" * (20 - current)
+
+        embed = discord.Embed(
+            title=f"⚡ Boost — {interaction.guild.name}",
+            color=discord.Color.gold() if current > 0 else discord.Color.darker_gray()
+        )
+        embed.add_field(name="Level", value=f"{current}/20", inline=True)
+        embed.add_field(name="Spawn Rarity", value=f"+{pct}%", inline=True)
+        embed.add_field(name="Next Boost Cost", value=next_cost, inline=True)
+        embed.add_field(name="Progress", value=progress, inline=False)
+        embed.set_footer(text="Each boost costs n × 1,000 BirdCoin and makes spawns 3% rarer.")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @discord.app_commands.command(name="boost", description="Boost this server's spawn rarity with BirdCoin (max 20)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
