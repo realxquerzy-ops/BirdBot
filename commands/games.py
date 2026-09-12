@@ -6,6 +6,39 @@ import discord
 from discord.ext import commands
 
 
+class BoostView(discord.ui.View):
+    def __init__(self, cog, guild_id, guild_name):
+        super().__init__(timeout=120)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.guild_name = guild_name
+
+    @discord.ui.button(label="⚡ Boost — +3% rarity", style=discord.ButtonStyle.gold)
+    async def boost_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        current = self.cog.bot.db.get_guild_boost(self.guild_id)
+        if current >= 20:
+            await interaction.response.send_message("❌ This server is already at max boost (20/20)!", ephemeral=True)
+            return
+
+        cost = (current + 1) * 1000
+        balance = self.cog.bot.db.get_birdcoin(self.guild_id, interaction.user.id)
+        if balance < cost:
+            await interaction.response.send_message(
+                f"❌ Not enough BirdCoin! You need **{cost:,}** coins (you have **{balance:,.0f}**).",
+                ephemeral=True
+            )
+            return
+
+        self.cog.bot.db.remove_birdcoin(self.guild_id, interaction.user.id, cost)
+        self.cog.bot.db.set_guild_boost(self.guild_id, current + 1)
+        new = current + 1
+
+        if new >= 20:
+            button.disabled = True
+        embed = self.cog.build_boost_embed(self.guild_name, new, balance - cost)
+        await interaction.response.edit_message(content=None, embed=embed, view=self)
+
+
 class GamesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -251,6 +284,23 @@ class GamesCog(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
 
+    def build_boost_embed(self, guild_name, current, balance):
+        pct = current * 3
+        next_cost = f"{(current + 1) * 1000:,} coins" if current < 20 else "Max reached"
+        progress = "🟩" * current + "⬜" * (20 - current)
+
+        embed = discord.Embed(
+            title=f"⚡ Boost — {guild_name}",
+            color=discord.Color.gold() if current > 0 else discord.Color.darker_gray()
+        )
+        embed.add_field(name="Level", value=f"{current}/20", inline=True)
+        embed.add_field(name="Spawn Rarity", value=f"+{pct}%", inline=True)
+        embed.add_field(name="Next Boost Cost", value=next_cost, inline=True)
+        embed.add_field(name="Progress", value=progress, inline=False)
+        embed.add_field(name="Your Balance", value=f"{balance:,.0f} BirdCoin", inline=True)
+        embed.set_footer(text="Each boost costs n × 1,000 BirdCoin and makes spawns 3% rarer.")
+        return embed
+
     @discord.app_commands.command(name="boostinfo", description="Show this server's boost level")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
@@ -261,20 +311,8 @@ class GamesCog(commands.Cog):
 
         guild_id = interaction.guild.id
         current = self.bot.db.get_guild_boost(guild_id)
-        pct = current * 3
-        next_cost = f"{(current + 1) * 1000:,} coins" if current < 20 else "Max reached"
-        progress = "🟩" * current + "⬜" * (20 - current)
-
-        embed = discord.Embed(
-            title=f"⚡ Boost — {interaction.guild.name}",
-            color=discord.Color.gold() if current > 0 else discord.Color.darker_gray()
-        )
-        embed.add_field(name="Level", value=f"{current}/20", inline=True)
-        embed.add_field(name="Spawn Rarity", value=f"+{pct}%", inline=True)
-        embed.add_field(name="Next Boost Cost", value=next_cost, inline=True)
-        embed.add_field(name="Progress", value=progress, inline=False)
-        embed.set_footer(text="Each boost costs n × 1,000 BirdCoin and makes spawns 3% rarer.")
-
+        balance = self.bot.db.get_birdcoin(guild_id, interaction.user.id)
+        embed = self.build_boost_embed(interaction.guild.name, current, balance)
         await interaction.response.send_message(embed=embed)
 
     @discord.app_commands.command(name="boost", description="Boost this server's spawn rarity with BirdCoin (max 20)")
@@ -287,28 +325,10 @@ class GamesCog(commands.Cog):
 
         guild_id = interaction.guild.id
         current = self.bot.db.get_guild_boost(guild_id)
-        if current >= 20:
-            await interaction.response.send_message("❌ This server is already at max boost (20/20)!", ephemeral=True)
-            return
-
-        cost = (current + 1) * 1000
         balance = self.bot.db.get_birdcoin(guild_id, interaction.user.id)
-        if balance < cost:
-            await interaction.response.send_message(
-                f"❌ Not enough BirdCoin! You need **{cost:,}** coins (you have **{balance:,.0f}**).",
-                ephemeral=True
-            )
-            return
-
-        self.bot.db.remove_birdcoin(guild_id, interaction.user.id, cost)
-        self.bot.db.set_guild_boost(guild_id, current + 1)
-        new = current + 1
-
-        next_line = f"\nThe next boost costs **{(new + 1) * 1000:,}** coins." if new < 20 else "\nMax boost reached!"
-        await interaction.response.send_message(
-            f"⚡ **Boost activated! (Level {new}/20)**\n"
-            f"Bird spawns in this server are now **{new * 3}% rarer** — {cost:,} coins spent.{next_line}"
-        )
+        embed = self.build_boost_embed(interaction.guild.name, current, balance)
+        view = BoostView(self, guild_id, interaction.guild.name)
+        await interaction.response.send_message(embed=embed, view=view)
 
     @discord.app_commands.command(name="spawn", description="Spawn a real catchable bird (whitelist only)")
     @discord.app_commands.describe(bird_name="Specific bird to spawn (leave empty for random)")
