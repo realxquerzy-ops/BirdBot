@@ -275,7 +275,7 @@ class GamesCog(commands.Cog):
         embed.add_field(name="Progress", value=progress, inline=False)
         embed.set_footer(text="Each boost costs n × 1,000 BirdCoin and makes spawns 3% rarer.")
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
 
     @discord.app_commands.command(name="boost", description="Boost this server's spawn rarity with BirdCoin (max 20)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
@@ -307,8 +307,7 @@ class GamesCog(commands.Cog):
         next_line = f"\nThe next boost costs **{(new + 1) * 1000:,}** coins." if new < 20 else "\nMax boost reached!"
         await interaction.response.send_message(
             f"⚡ **Boost activated! (Level {new}/20)**\n"
-            f"Bird spawns in this server are now **{new * 3}% rarer** — {cost:,} coins spent.{next_line}",
-            ephemeral=True
+            f"Bird spawns in this server are now **{new * 3}% rarer** — {cost:,} coins spent.{next_line}"
         )
 
     @discord.app_commands.command(name="spawn", description="Spawn a real catchable bird (whitelist only)")
