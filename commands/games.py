@@ -345,7 +345,7 @@ class GamesCog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     def build_boost_embed(self, guild_name, current, balance):
-        pct = current * 5
+        pct = current * 10
         progress = "🟩" * current + "⬜" * (20 - current)
 
         embed = discord.Embed(
@@ -356,7 +356,7 @@ class GamesCog(commands.Cog):
         embed.add_field(name="Spawn Rarity", value=f"+{pct}%", inline=True)
         embed.add_field(name="Progress", value=progress, inline=False)
         embed.add_field(name="Your Balance", value=f"{balance:,.0f} BirdCoin", inline=True)
-        embed.set_footer(text="Each boost makes rare birds 5% more likely to spawn.")
+        embed.set_footer(text="Each boost makes rare birds 10% more likely to spawn.")
         return embed
 
     @discord.app_commands.command(name="boostinfo", description="Show this server's boost level")
