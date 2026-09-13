@@ -1,4 +1,6 @@
 import os
+import random
+import time
 
 import discord
 from discord.ext import commands
@@ -223,4 +225,22 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     print("❌ HATA: DISCORD_TOKEN bulunamadı! Lütfen Railway Variables kısmına ekleyin.")
 else:
-    bot.run(TOKEN)
+    retry = 0
+    while True:
+        try:
+            bot.run(TOKEN, reconnect=True)
+            break
+        except discord.HTTPException as e:
+            retry += 1
+            wait = min(300, 20 * (2 ** (retry - 1))) + random.uniform(0, 5)
+            print(f"[startup] Discord API error (HTTP {e.status}): {e}. Retrying login in {wait:.0f}s (attempt {retry})")
+            time.sleep(wait)
+        except KeyboardInterrupt:
+            break
+        except SystemExit:
+            raise
+        except Exception as e:
+            retry += 1
+            wait = min(300, 20 * (2 ** (retry - 1))) + random.uniform(0, 5)
+            print(f"[startup] Unexpected error: {e}. Restarting bot in {wait:.0f}s (attempt {retry})")
+            time.sleep(wait)
