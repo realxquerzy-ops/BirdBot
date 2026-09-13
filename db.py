@@ -221,7 +221,14 @@ class Database:
             "SELECT birds FROM autodefend WHERE guild_id = %s AND user_id = %s",
             (int(guild_id), int(user_id)),
         )
-        return json.loads(row[0]) if row and row[0] else {}
+        if not row or row[0] is None:
+            return {}
+        val = row[0]
+        if isinstance(val, dict):
+            return val
+        if isinstance(val, str):
+            return json.loads(val)
+        return {}
 
     def set_autodefend(self, guild_id, user_id, birds):
         birds = dict(birds) if birds else {}
