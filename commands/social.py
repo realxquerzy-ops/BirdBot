@@ -88,7 +88,7 @@ class TradeSelect(discord.ui.Select):
 
 
 class TradeRemoveSelect(discord.ui.Select):
-    def __init__(self, parent_view, owner_id, placeholder):
+    def __init__(self, parent_view, owner_id, placeholder, row):
         self.parent_view = parent_view
         self.owner_id = owner_id
         super().__init__(
@@ -97,7 +97,7 @@ class TradeRemoveSelect(discord.ui.Select):
             max_values=1,
             options=[discord.SelectOption(label="Nothing to remove", value="__none__")],
             disabled=True,
-            row=3,
+            row=row,
         )
 
     def refresh(self):
@@ -196,8 +196,8 @@ class TradeConfirmView(discord.ui.View):
         self.add_item(self.init_select)
         self.add_item(self.target_select)
 
-        self.init_remove = TradeRemoveSelect(self, initiator.id, f"{initiator.name}: Remove from offer")
-        self.target_remove = TradeRemoveSelect(self, target.id, f"{target.name}: Remove from offer")
+        self.init_remove = TradeRemoveSelect(self, initiator.id, f"{initiator.name}: Remove from offer", row=3)
+        self.target_remove = TradeRemoveSelect(self, target.id, f"{target.name}: Remove from offer", row=4)
         self.add_item(self.init_remove)
         self.add_item(self.target_remove)
         self.refresh_remove_selects()
