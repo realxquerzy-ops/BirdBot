@@ -255,6 +255,44 @@ class Database:
             (guild_id, user_id, amount),
         )
 
+    def ban_birdbot(self, guild_id, user_id):
+        self.execute(
+            "INSERT INTO birdbot_bans (guild_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (int(guild_id), int(user_id)),
+        )
+
+    def unban_birdbot(self, guild_id, user_id):
+        self.execute(
+            "DELETE FROM birdbot_bans WHERE guild_id = %s AND user_id = %s",
+            (int(guild_id), int(user_id)),
+        )
+
+    def unban_birdbot_global(self, user_id):
+        self.execute(
+            "DELETE FROM birdbot_bans WHERE user_id = %s",
+            (int(user_id),),
+        )
+
+    def is_user_banned(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT 1 FROM birdbot_bans WHERE user_id = %s AND (guild_id = 0 OR guild_id = %s) LIMIT 1",
+            (int(user_id), int(guild_id)),
+        )
+        return row is not None
+
+    def get_bans(self, guild_id, user_id=None):
+        if user_id is not None:
+            rows = self.fetchall(
+                "SELECT guild_id FROM birdbot_bans WHERE user_id = %s",
+                (int(user_id),),
+            )
+        else:
+            rows = self.fetchall(
+                "SELECT DISTINCT user_id FROM birdbot_bans WHERE guild_id = %s OR guild_id = 0",
+                (int(guild_id),),
+            )
+        return rows
+
     def remove_birdcoin(self, guild_id, user_id, amount):
         self.execute(
             "UPDATE birdcoin SET balance = GREATEST(balance - %s, 0) WHERE guild_id = %s AND user_id = %s",

@@ -166,6 +166,13 @@ class CoreCog(commands.Cog):
         if message.author.bot:
             return
 
+        try:
+            gid = int(message.guild.id) if message.guild else 0
+            if message.author.id not in self.bot.whitelisted_users and self.bot.db.is_user_banned(gid, message.author.id):
+                return
+        except Exception:
+            pass
+
         self.bot.last_active[message.author.id] = time.time()
 
         if message.guild:

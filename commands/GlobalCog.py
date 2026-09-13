@@ -165,6 +165,85 @@ class GlobalCog(commands.Cog):
             print(f"Error in glb command: {e}")
             await interaction.followup.send("❌ An error occurred while generating the leaderboard.", ephemeral=True)
 
+    def _can_ban(self, interaction):
+        return interaction.user.id in self.bot.whitelisted_users
+
+    @discord.app_commands.command(name="birdbotban", description="Ban a user from using BirdBot (whitelist only)")
+    @discord.app_commands.describe(
+        member="User to ban",
+        scope="Ban in this server only, or across the whole BirdBot",
+        reason="Optional reason"
+    )
+    @discord.app_commands.choices(scope=[
+        discord.app_commands.Choice(name="🏠 Server only", value="server"),
+        discord.app_commands.Choice(name="🌐 Global (everything)", value="global"),
+    ])
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def birdbotban(self, interaction: discord.Interaction, member: discord.Member,
+                         scope: str = "server", reason: str = None):
+        await interaction.response.defer()
+        if not self._can_ban(interaction):
+            await interaction.followup.send("❌ Only the bot owner can use this command!", ephemeral=True)
+            return
+
+        if scope == "server":
+            guild_id = int(interaction.guild.id) if interaction.guild else 0
+            self.bot.db.ban_birdbot(guild_id, member.id)
+            scope_txt = f"in **{interaction.guild.name}**"
+        else:
+            self.bot.db.ban_birdbot(0, member.id)
+            scope_txt = "**everywhere (global)**"
+
+        reason_txt = f"\n📝 Reason: {reason}" if reason else ""
+        embed = discord.Embed(
+            title="🚫 User Banned from BirdBot!",
+            description=f"**{member.mention}** can no longer use BirdBot {scope_txt} (commands, catching, everything).{reason_txt}",
+            color=discord.Color.red()
+        )
+        await interaction.followup.send(embed=embed)
+        try:
+            await member.send(f"🚫 You have been banned from using BirdBot {scope_txt}.{reason_txt}")
+        except Exception:
+            pass
+
+    @discord.app_commands.command(name="birdbotunban", description="Unban a user from BirdBot (whitelist only)")
+    @discord.app_commands.describe(
+        member="User to unban",
+        scope="Unban in this server, or everywhere",
+    )
+    @discord.app_commands.choices(scope=[
+        discord.app_commands.Choice(name="🏠 Server only", value="server"),
+        discord.app_commands.Choice(name="🌐 Global (everything)", value="global"),
+    ])
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def birdbotunban(self, interaction: discord.Interaction, member: discord.Member,
+                           scope: str = "server"):
+        await interaction.response.defer()
+        if not self._can_ban(interaction):
+            await interaction.followup.send("❌ Only the bot owner can use this command!", ephemeral=True)
+            return
+
+        if scope == "global":
+            self.bot.db.unban_birdbot_global(member.id)
+            scope_txt = "everywhere (global)"
+        else:
+            guild_id = int(interaction.guild.id) if interaction.guild else 0
+            self.bot.db.unban_birdbot(guild_id, member.id)
+            scope_txt = f"in **{interaction.guild.name}**" if interaction.guild else "here"
+
+        embed = discord.Embed(
+            title="✅ User Unbanned!",
+            description=f"**{member.mention}** can use BirdBot again {scope_txt}.",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed)
+        try:
+            await member.send(f"✅ You have been unbanned from BirdBot {scope_txt}.")
+        except Exception:
+            pass
+
 
 async def setup(bot):
     await bot.add_cog(GlobalCog(bot))

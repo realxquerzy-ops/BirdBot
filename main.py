@@ -92,6 +92,12 @@ db.execute('''CREATE TABLE IF NOT EXISTS autodefend (
     PRIMARY KEY (guild_id, user_id)
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS birdbot_bans (
+    guild_id BIGINT,
+    user_id BIGINT,
+    PRIMARY KEY (guild_id, user_id)
+)''')
+
 db.execute('''CREATE TABLE IF NOT EXISTS battle_log (
     id SERIAL PRIMARY KEY,
     guild_id BIGINT,
@@ -226,6 +232,24 @@ bot.resource_guild_ids = RESOURCE_GUILD_IDS
 bot.spawn_states = {}
 bot.server_settings = db.get_server_settings()
 bot.db = db
+
+async def _tree_interaction_check(interaction):
+    user = interaction.user
+    if user.id in bot.whitelisted_users:
+        return True
+    guild_id = int(interaction.guild_id) if interaction.guild_id else 0
+    try:
+        if bot.db.is_user_banned(guild_id, user.id):
+            try:
+                await interaction.response.send_message("🚫 You are banned from using BirdBot.", ephemeral=True)
+            except Exception:
+                pass
+            return False
+    except Exception:
+        pass
+    return True
+
+bot.tree.interaction_check = _tree_interaction_check
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
