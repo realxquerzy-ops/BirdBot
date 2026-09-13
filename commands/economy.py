@@ -145,6 +145,147 @@ class EconomyCog(commands.Cog):
                     games_cog.unlock_achievement(top_id, "top_1", interaction.channel, guild_id=guild_id)
                 )
 
+    def merge_recipes(self):
+        birds = [b["name"] for b in self.bot.birds]
+        merge_cost = {}
+        merge_next = {}
+        for i in range(len(birds) - 2):
+            src = birds[i]
+            merge_cost[src] = 2 + i // 2
+            merge_next[src] = birds[i + 1]
+        return merge_cost, merge_next
+
+    @discord.app_commands.command(name="merge", description="Merge birds into rarer birds (e.g. 2 Bird → 1 Good Bird)")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def merge(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        guild_id = interaction.guild.id
+        counts = Counter(self.bot.db.get_inventory(guild_id, interaction.user.id))
+        merge_cost, merge_next = self.merge_recipes()
+
+        view = MergeView(self.bot, guild_id, merge_cost, merge_next)
+        msg = await interaction.followup.send(
+            embed=MergeView.build_chart(merge_cost, merge_next, counts),
+            view=view,
+            ephemeral=True
+        )
+        view._msg = msg
+
+
+class MergeSelect(discord.ui.Select):
+    def __init__(self, bot, merge_cost, merge_next):
+        options = []
+        for src in merge_cost:
+            options.append(discord.SelectOption(
+                label=f"{src} → {merge_next[src]}",
+                value=src,
+                description=f"{merge_cost[src]}x {src} = 1x {merge_next[src]}"
+            ))
+        super().__init__(placeholder="Which bird do you want to merge?", options=options[:25], row=0)
+
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        src = self.values[0]
+        counts = Counter(view.bot.db.get_inventory(int(view.guild_id), interaction.user.id))
+        cost = view.merge_cost[src]
+        max_merges = counts.get(src, 0) // cost
+        if max_merges < 1:
+            await interaction.response.send_message("❌ You don't have enough of that bird anymore!", ephemeral=True)
+            return
+        await interaction.response.send_modal(MergeModal(view, src, view.merge_next[src], cost, max_merges))
+
+
+class MergeModal(discord.ui.Modal):
+    def __init__(self, view, src, nxt, cost, max_merges):
+        super().__init__(title=f"🔀 Merge {src} ×{cost} → {nxt}")
+        self.view = view
+        self.src = src
+        self.nxt = nxt
+        self.cost = cost
+        self.max_merges = max_merges
+        self.count_input = discord.ui.TextInput(
+            label=f"How many merges? (1-{max_merges})",
+            placeholder="Enter a number...",
+            min_length=1,
+            max_length=4,
+            default="1"
+        )
+        self.add_item(self.count_input)
+
+    async def on_submit(self, interaction):
+        try:
+            n = int(self.count_input.value)
+            if n < 1 or n > self.max_merges:
+                raise ValueError()
+        except ValueError:
+            await interaction.response.send_message(f"❌ Enter a number between 1 and {self.max_merges}!", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        guild_id = int(self.view.guild_id)
+        inv = self.view.bot.db.get_inventory(guild_id, interaction.user.id)
+        counts = Counter(inv)
+        need = self.cost * n
+        if counts.get(self.src, 0) < need:
+            await interaction.followup.send("❌ You don't have enough birds anymore!", ephemeral=True)
+            return
+
+        removed = 0
+        new_inv = []
+        for b in inv:
+            if b == self.src and removed < need:
+                removed += 1
+                continue
+            new_inv.append(b)
+        new_inv.extend([self.nxt] * n)
+        self.view.bot.db.save_inventory(guild_id, interaction.user.id, new_inv)
+
+        try:
+            await self.view._msg.edit(embed=MergeView.build_chart(
+                self.view.merge_cost, self.view.merge_next, Counter(new_inv)
+            ), view=self.view)
+        except Exception:
+            pass
+
+        embed = discord.Embed(
+            title="🔀 Merge Complete!",
+            description=f"**{self.src}** ×{self.cost} → **{self.nxt}**\nYou merged **{n}** time{'s' if n != 1 else ''} and now own **{n}x {self.nxt}**.",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+class MergeView(discord.ui.View):
+    def __init__(self, bot, guild_id, merge_cost, merge_next):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.guild_id = str(guild_id)
+        self.merge_cost = merge_cost
+        self.merge_next = merge_next
+        self._msg = None
+        self.add_item(MergeSelect(bot, merge_cost, merge_next))
+
+    @staticmethod
+    def build_chart(merge_cost, merge_next, counts=None):
+        lines = []
+        for src, cost in merge_cost.items():
+            nxt = merge_next[src]
+            has = counts.get(src, 0) if counts else 0
+            poss = has // cost if counts else 0
+            lines.append(f"• **{src}** ×{cost} → **{nxt}**" + (f" `({poss} possible)`" if counts else ""))
+        embed = discord.Embed(
+            title="🔀 Merge Birds",
+            description="\n".join(lines) + "\n\n⚡ **Caseoh Bird** cannot be merged.",
+            color=discord.Color.purple()
+        )
+        embed.set_footer(text="Pick a bird below to merge it into a rarer bird.")
+        return embed
+
 
 async def setup(bot):
     await bot.add_cog(EconomyCog(bot))
