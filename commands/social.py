@@ -130,6 +130,40 @@ class TradeRemoveSelect(discord.ui.Select):
         )
 
 
+class CoinOfferModal(discord.ui.Modal):
+    def __init__(self, view_instance, owner_id, balance):
+        super().__init__(title="Add BirdCoin to Offer")
+        self.view_instance = view_instance
+        self.owner_id = owner_id
+        self.amount_input = discord.ui.TextInput(
+            label=f"BirdCoin (Max: {int(balance):,})",
+            placeholder="Enter total BirdCoin to offer (0 to remove)...",
+            min_length=1,
+            max_length=12,
+            default="0"
+        )
+        self.add_item(self.amount_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            val = int(float(self.amount_input.value.replace(",", "").strip()))
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid number!", ephemeral=True)
+            return
+
+        if val < 0:
+            await interaction.response.send_message("❌ Amount cannot be negative!", ephemeral=True)
+            return
+
+        balance = int(self.view_instance.bot.db.get_birdcoin(int(self.view_instance.guild_id), interaction.user.id))
+        val = min(val, balance)
+
+        self.view_instance.set_coins(self.owner_id, val)
+        if hasattr(self.view_instance, "confirmed_users"):
+            self.view_instance.confirmed_users.clear()
+        await interaction.response.edit_message(content=self.view_instance.update_status_text(), view=self.view_instance)
+
+
 class TradeConfirmView(discord.ui.View):
     MAX_SLOTS = 9
 
@@ -144,6 +178,11 @@ class TradeConfirmView(discord.ui.View):
         self.offers = {
             initiator.id: {},
             target.id: {}
+        }
+
+        self.offer_coins = {
+            initiator.id: 0,
+            target.id: 0
         }
 
         self.init_birds = bot.db.get_inventory(int(guild_id), initiator.id)
@@ -173,20 +212,26 @@ class TradeConfirmView(discord.ui.View):
         offer[bird_name] = count
         return True
 
+    def set_coins(self, user_id, amount):
+        self.offer_coins[user_id] = int(amount)
+
     def refresh_remove_selects(self):
         self.init_remove.refresh()
         self.target_remove.refresh()
 
     def format_offer_list(self, user_id):
         user_offer = self.offers.get(user_id, {})
-        if not user_offer:
-            return "Nothing selected"
+        lines = []
+        if user_offer:
+            for i, (bird, count) in enumerate(user_offer.items(), 1):
+                lines.append(f"`{i}. {count}x {bird}`")
+        else:
+            lines.append("Nothing selected")
 
-        items = [
-            f"`{i}. {count}x {bird}`"
-            for i, (bird, count) in enumerate(user_offer.items(), 1)
-        ]
-        return "\n".join(items)
+        coin_amount = self.offer_coins.get(user_id, 0)
+        if coin_amount > 0:
+            lines.append(f"🪙 `{int(coin_amount):,}` BirdCoin")
+        return "\n".join(lines)
 
     def update_status_text(self):
         init_offer_str = self.format_offer_list(self.initiator.id)
@@ -233,6 +278,15 @@ class TradeConfirmView(discord.ui.View):
                     except Exception as e:
                         print(f"Could not send achievement notification: {e}")
 
+    @discord.ui.button(label="Add BirdCoin", style=discord.ButtonStyle.blurple, row=2)
+    async def add_coin(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user not in [self.initiator, self.target]:
+            await interaction.response.send_message("You are not part of this trade!", ephemeral=True)
+            return
+        balance = self.bot.db.get_birdcoin(int(self.guild_id), interaction.user.id)
+        modal = CoinOfferModal(self, interaction.user.id, balance)
+        await interaction.response.send_modal(modal)
+
     @discord.ui.button(label="Confirm Trade", style=discord.ButtonStyle.green, row=2)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user not in [self.initiator, self.target]:
@@ -269,8 +323,15 @@ class TradeConfirmView(discord.ui.View):
                     can_trade = False
                     break
 
+            init_coins = self.offer_coins.get(init_id, 0)
+            target_coins = self.offer_coins.get(target_id, 0)
+            if init_coins > self.bot.db.get_birdcoin(guild_id_int, init_id):
+                can_trade = False
+            if target_coins > self.bot.db.get_birdcoin(guild_id_int, target_id):
+                can_trade = False
+
             if not can_trade:
-                await interaction.followup.send("❌ Trade failed! One of the users no longer has enough of the selected birds.", ephemeral=True)
+                await interaction.followup.send("❌ Trade failed! One of the users no longer has enough birds or BirdCoin.", ephemeral=True)
                 return
 
             for bird, count in self.offers[init_id].items():
@@ -283,6 +344,13 @@ class TradeConfirmView(discord.ui.View):
                     target_user_birds.remove(bird)
                     init_user_birds.append(bird)
 
+            if init_coins > 0:
+                self.bot.db.remove_birdcoin(guild_id_int, init_id, init_coins)
+                self.bot.db.add_birdcoin(guild_id_int, target_id, init_coins)
+            if target_coins > 0:
+                self.bot.db.remove_birdcoin(guild_id_int, target_id, target_coins)
+                self.bot.db.add_birdcoin(guild_id_int, init_id, target_coins)
+
             self.bot.db.save_inventory(guild_id_int, init_id, init_user_birds)
             self.bot.db.save_inventory(guild_id_int, target_id, target_user_birds)
 
@@ -291,8 +359,8 @@ class TradeConfirmView(discord.ui.View):
 
             bird_values = {b["name"].lower(): b.get("value", 1) for b in self.bot.birds}
 
-            init_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[init_id].items())
-            target_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[target_id].items())
+            init_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[init_id].items()) + init_coins
+            target_val = sum(count * bird_values.get(bird.lower(), 1) for bird, count in self.offers[target_id].items()) + target_coins
 
             if init_val > target_val * 3:
                 await self.unlock_achievement(self.target.id, "scammer", interaction.channel)
