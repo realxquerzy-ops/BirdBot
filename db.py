@@ -216,6 +216,29 @@ class Database:
         )
         return float(row[0]) if row and row[0] is not None else 0.0
 
+    def get_autodefend(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT birds FROM autodefend WHERE guild_id = %s AND user_id = %s",
+            (int(guild_id), int(user_id)),
+        )
+        return json.loads(row[0]) if row and row[0] else {}
+
+    def set_autodefend(self, guild_id, user_id, birds):
+        birds = dict(birds) if birds else {}
+        if not birds:
+            self.execute(
+                "DELETE FROM autodefend WHERE guild_id = %s AND user_id = %s",
+                (int(guild_id), int(user_id)),
+            )
+            return
+        self.execute(
+            """
+            INSERT INTO autodefend (guild_id, user_id, birds) VALUES (%s, %s, %s)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds
+            """,
+            (int(guild_id), int(user_id), json.dumps(birds)),
+        )
+
     def add_birdcoin(self, guild_id, user_id, amount):
         self.execute(
             """

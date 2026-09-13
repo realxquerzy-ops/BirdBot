@@ -1,5 +1,6 @@
 import asyncio
 import random
+import re
 import time
 from collections import Counter
 
@@ -18,6 +19,59 @@ def fmt_commit(commit):
     if not commit:
         return "None yet"
     return ", ".join(f"{n}x {b}" for b, n in sorted(commit.items()))
+
+
+def parse_bird_counts(bot, text, inventory_counts):
+    text = " ".join(text.split())
+    if not text:
+        return None
+    names = sorted({b["name"] for b in bot.birds}, key=len, reverse=True)
+    result = Counter()
+    remaining = text
+    for name in names:
+        pat = re.compile(re.escape(name) + r"\s+(\d+)", re.IGNORECASE)
+        while True:
+            m = pat.search(remaining)
+            if not m:
+                break
+            result[name] += int(m.group(1))
+            remaining = (remaining[:m.start()] + " " + remaining[m.end():]).strip()
+    if not result:
+        return None
+    for name, n in result.items():
+        if n < 1:
+            return None
+        if n > inventory_counts.get(name, 0):
+            return "insufficient"
+    return dict(result)
+
+
+def _make_fake_interaction(message):
+    class _FakeResponse:
+        async def edit_message(self, **kwargs):
+            await message.edit(**kwargs)
+
+        def is_done(self):
+            return True
+
+    class _FakeFollowup:
+        async def edit_message(self, message_id=None, **kwargs):
+            await message.edit(**kwargs)
+
+        async def send(self, *args, **kwargs):
+            return message
+
+    class _FakeInteraction:
+        def __init__(self):
+            self.message = message
+            self.response = _FakeResponse()
+            self.followup = _FakeFollowup()
+            self.channel = message.channel
+
+        async def edit_original_response(self, **kwargs):
+            await message.edit(**kwargs)
+
+    return _FakeInteraction()
 
 
 def transfer_birds(bot, guild_id, from_user, to_user, birds_list):
@@ -246,6 +300,32 @@ class FightSetupView(discord.ui.View):
             await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
             self.stop()
             return
+
+        if self.target.id != self.bot.user.id:
+            auto = self.bot.db.get_autodefend(int(self.guild_id), self.target.id)
+            if auto:
+                counts = Counter(self.bot.db.get_inventory(int(self.guild_id), self.target.id))
+                if all(counts.get(b, 0) >= n for b, n in auto.items()):
+                    def_inv = self.bot.db.get_inventory(int(self.guild_id), self.target.id)
+                    view = AutoBattleView(
+                        self.bot, self.attacker, self.target, self.guild_id,
+                        dict(self.commit[self.attacker.id]), def_inv
+                    )
+                    view.autodefend = dict(auto)
+                    view._turns = 2
+                    view._expiry_msg = await interaction.channel.send(
+                        content=f"🛡️ **{self.target.mention}** auto-defended against **{self.attacker.mention}**'s attack!",
+                        embed=view.build_embed(),
+                        view=view
+                    )
+                    await view.auto_defend_round(_make_fake_interaction(view._expiry_msg))
+                    await interaction.edit_original_response(embed=discord.Embed(
+                        title="📨 Auto-Defense Engaged!",
+                        description=f"**{self.target.name}** is automatically fighting back against **{self.attacker.name}**!",
+                        color=discord.Color.green()
+                    ), view=None)
+                    self.stop()
+                    return
 
         view = FightChallengeView(self.bot, self.attacker, self.target, self.guild_id, dict(self.commit[self.attacker.id]))
         remaining = view._deadline - time.time()
@@ -486,6 +566,8 @@ class AutoBattleView(discord.ui.View):
         self._timer_task = None
         self._deadline = time.time() + 30
         self._resolving = False
+        self.autodefend = None
+        self._turns = None
         
         bird_values = {bird["name"].lower(): bird.get("value", 1) for bird in bot.birds}
         self.def_select = FightAddSelect(def_inv, defender.id, bird_values, f"{defender.name}: Send birds to defend!", row=0, auto_battle=True)
@@ -705,7 +787,13 @@ class AutoBattleView(discord.ui.View):
         )
         
         if attacker_wins:
-            if not is_fake:
+            if getattr(self, "autodefend", None) is not None:
+                if getattr(self, "_turns", 1) <= 1:
+                    self.stop()
+                else:
+                    self._turns -= 1
+                    await self._start_extension_phase(interaction)
+            elif not is_fake:
                 await self._start_extension_phase(interaction)
             else:
                 # For timeout resolution, defender lost - attacker wins
@@ -822,6 +910,28 @@ class AutoBattleView(discord.ui.View):
             embed=self.build_embed(), 
             view=self
         )
+
+        if getattr(self, "autodefend", None):
+            await self.auto_defend_round(interaction)
+
+    async def auto_defend_round(self, interaction):
+        counts = Counter(self.bot.db.get_inventory(int(self.guild_id), self.defender.id))
+        commit = Counter()
+        for bird, n in (self.autodefend or {}).items():
+            avail = counts.get(bird, 0)
+            if n <= 0 or avail <= 0:
+                continue
+            commit[bird] = min(n, avail)
+        self.def_commit = commit
+        if not commit:
+            await self._finish(discord.Embed(
+                title="🕶️ Auto-Defense: Nothing to Fight With!",
+                description=(f"**{self.attacker.name}** attacked **{self.defender.name}** "
+                             f"but the auto-defense had no birds to commit."),
+                color=discord.Color.greyple(),
+            ))
+            return
+        await self._resolve_battle(interaction)
 
 
 class AutoBattleModal(discord.ui.Modal):
@@ -1231,6 +1341,105 @@ class FightCog(commands.Cog):
         embed.add_field(name="Rank", value=rank, inline=True)
         
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    autodefend_group = discord.app_commands.Group(
+        name="autodefend", description="Auto-defend when someone attacks you"
+    )
+
+    @autodefend_group.command(name="set", description="Set which birds to auto-defend with (e.g. Bird 3 Good Bird 2)")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def autodefend_set(self, interaction: discord.Interaction, birds: str):
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        guild_id = interaction.guild.id
+        inv = Counter(self.bot.db.get_inventory(guild_id, interaction.user.id))
+        parsed = parse_bird_counts(self.bot, birds, inv)
+        if parsed is None:
+            await interaction.followup.send(
+                "❌ Couldn't parse that. Format: `/autodefend set <bird> <count> <bird> <count>...`\n"
+                "Example: `/autodefend set Bird 3 Good Bird 2`",
+                ephemeral=True
+            )
+            return
+        if parsed == "insufficient":
+            await interaction.followup.send(
+                f"❌ You don't have enough of those birds! Your inventory: **{fmt_commit(inv)}**",
+                ephemeral=True
+            )
+            return
+        self.bot.db.set_autodefend(guild_id, interaction.user.id, parsed)
+        await interaction.followup.send(
+            f"🛡️ **Auto-Defense armed!** You'll automatically fight back with: **{fmt_commit(Counter(parsed))}**",
+            ephemeral=True
+        )
+
+    @autodefend_group.command(name="remove", description="Remove birds from your auto-defense setup")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def autodefend_remove(self, interaction: discord.Interaction, birds: str):
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        guild_id = interaction.guild.id
+        current = dict(self.bot.db.get_autodefend(guild_id, interaction.user.id))
+        if not current:
+            await interaction.followup.send("🛡️ You don't have any Auto-Defense set up.", ephemeral=True)
+            return
+        parsed = parse_bird_counts(self.bot, birds, current)
+        if parsed is None:
+            await interaction.followup.send(
+                "❌ Couldn't parse that. Format: `/autodefend remove <bird> <count> <bird> <count>...`",
+                ephemeral=True
+            )
+            return
+        if parsed == "insufficient":
+            await interaction.followup.send(
+                f"❌ You're not auto-defending with that many. Current: **{fmt_commit(Counter(current))}**",
+                ephemeral=True
+            )
+            return
+        for bird, n in parsed.items():
+            current[bird] = current.get(bird, 0) - n
+            if current[bird] <= 0:
+                current.pop(bird, None)
+        self.bot.db.set_autodefend(guild_id, interaction.user.id, current)
+        if not current:
+            await interaction.followup.send("🛡️ **Auto-Defense turned off.**", ephemeral=True)
+        else:
+            await interaction.followup.send(
+                f"🛡️ Removed. Now auto-defending with: **{fmt_commit(Counter(current))}**",
+                ephemeral=True
+            )
+
+    @autodefend_group.command(name="check", description="View a user's auto-defense configuration")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def autodefend_check(self, interaction: discord.Interaction, member: discord.Member = None):
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+        guild_id = interaction.guild.id
+        target = member or interaction.user
+        current = self.bot.db.get_autodefend(guild_id, target.id)
+        if not current:
+            await interaction.followup.send(
+                f"🛡️ **{target.display_name}** has **no Auto-Defense** set up. "
+                f"Use `/autodefend set <bird> <count>...`!",
+                ephemeral=True
+            )
+            return
+        inv = Counter(self.bot.db.get_inventory(guild_id, target.id))
+        ready = all(inv.get(b, 0) >= n for b, n in current.items())
+        status = "✅ armed" if ready else "⚠️ not armed (missing birds in inventory)"
+        await interaction.followup.send(
+            f"🛡️ **{target.display_name}**'s Auto-Defense: **{fmt_commit(Counter(current))}** — {status}",
+            ephemeral=True
+        )
 
     async def _fight_birdbot(self, interaction: discord.Interaction):
         """Normal fight flow — BirdBot instantly accepts and guards with 999 Radioactive Birds"""
