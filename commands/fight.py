@@ -553,10 +553,23 @@ class AutoBattleView(discord.ui.View):
             while not self.is_finished():
                 remaining = self._deadline - time.time()
                 if remaining <= 0:
-                    if self.phase == "waiting":
-                        await self._resolve_timeout()
-                    elif self.phase == "extension":
-                        await self._resolve_extension_timeout()
+                    try:
+                        if self.phase == "waiting":
+                            await self._resolve_timeout()
+                        elif self.phase == "extension":
+                            await self._resolve_extension_timeout()
+                    except Exception as e:
+                        print(f"[fight] timeout resolve error: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        try:
+                            await self._finish(discord.Embed(
+                                title="⚔️ Battle Over!",
+                                description="The battle timed out but couldn't be resolved automatically.",
+                                color=discord.Color.greyple(),
+                            ))
+                        except Exception:
+                            pass
                     return
                 msg = getattr(self, "_expiry_msg", None) or self.message
                 if msg:

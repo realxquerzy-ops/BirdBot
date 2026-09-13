@@ -15,6 +15,8 @@ class Database:
             password=parsed.password,
             host=parsed.hostname,
             port=parsed.port,
+            connect_timeout=5,
+            options="-c statement_timeout=5000 -c lock_timeout=3000",
         )
 
     def close(self):
