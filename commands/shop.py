@@ -183,7 +183,8 @@ class ShopCog(commands.Cog):
                 new_inv.append(b)
         self.bot.db.save_inventory(guild_id, user_id, new_inv)
 
-        value = self.bot.bird_values.get(canon, 1)
+        base_value = self.bot.bird_values.get(canon, 1)
+        value = round(base_value * 1.4, 2)
         earned = value * n
         boost = False
         powerups_cog = self.bot.get_cog("PowerupsCog")
@@ -206,7 +207,7 @@ class ShopCog(commands.Cog):
             title="💸 Sale Complete!",
             description=(
                 f"Sold {amount_txt} **{canon}** for 🪙 **{self.fmt_coin(earned)} BirdCoin**!\n"
-                f"🪙 New balance: `{self.fmt_coin(new_balance)}`{boost_txt}"
+                f"💎 Value `{base_value}` × 1.4 = **`{value}`** each | 🪙 New balance: `{self.fmt_coin(new_balance)}`{boost_txt}"
             ),
             color=discord.Color.green()
         )
