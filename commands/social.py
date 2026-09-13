@@ -42,6 +42,7 @@ class MultiQuantityModal(discord.ui.Modal):
             if hasattr(self.view_instance, "confirmed_users"):
                 self.view_instance.confirmed_users.clear()
 
+            self.view_instance.refresh_remove_selects()
             await interaction.response.edit_message(content=self.view_instance.update_status_text(), view=self.view_instance)
         except Exception:
             log_error()
@@ -86,6 +87,49 @@ class TradeSelect(discord.ui.Select):
         await interaction.response.send_modal(modal)
 
 
+class TradeRemoveSelect(discord.ui.Select):
+    def __init__(self, parent_view, owner_id, placeholder):
+        self.parent_view = parent_view
+        self.owner_id = owner_id
+        super().__init__(
+            placeholder=placeholder,
+            min_values=1,
+            max_values=1,
+            options=[discord.SelectOption(label="Nothing to remove", value="__none__")],
+            disabled=True,
+            row=3,
+        )
+
+    def refresh(self):
+        offer = self.parent_view.offers.get(self.owner_id, {})
+        if offer:
+            self.options = [
+                discord.SelectOption(label=f"Remove: {bird} (x{count})", value=bird)
+                for bird, count in offer.items()
+            ][:25]
+            self.disabled = False
+        else:
+            self.options = [discord.SelectOption(label="Nothing to remove", value="__none__")]
+            self.disabled = True
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ You cannot modify the other user's offer!", ephemeral=True)
+            return
+        if self.values[0] == "__none__":
+            await interaction.response.send_message("❌ Nothing to remove.", ephemeral=True)
+            return
+        bird = self.values[0]
+        self.parent_view.offers[self.owner_id].pop(bird, None)
+        if hasattr(self.parent_view, "confirmed_users"):
+            self.parent_view.confirmed_users.clear()
+        self.parent_view.refresh_remove_selects()
+        await interaction.response.edit_message(
+            content=self.parent_view.update_status_text(),
+            view=self.parent_view,
+        )
+
+
 class TradeConfirmView(discord.ui.View):
     MAX_SLOTS = 9
 
@@ -113,6 +157,12 @@ class TradeConfirmView(discord.ui.View):
         self.add_item(self.init_select)
         self.add_item(self.target_select)
 
+        self.init_remove = TradeRemoveSelect(self, initiator.id, f"{initiator.name}: Remove from offer")
+        self.target_remove = TradeRemoveSelect(self, target.id, f"{target.name}: Remove from offer")
+        self.add_item(self.init_remove)
+        self.add_item(self.target_remove)
+        self.refresh_remove_selects()
+
     def add_offer(self, user_id, bird_name, count):
         offer = self.offers[user_id]
         if bird_name in offer:
@@ -122,6 +172,10 @@ class TradeConfirmView(discord.ui.View):
             return False
         offer[bird_name] = count
         return True
+
+    def refresh_remove_selects(self):
+        self.init_remove.refresh()
+        self.target_remove.refresh()
 
     def format_offer_list(self, user_id):
         user_offer = self.offers.get(user_id, {})
