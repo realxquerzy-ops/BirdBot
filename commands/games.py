@@ -96,6 +96,46 @@ class GamesCog(commands.Cog):
         "shop_broke": {"name": "Broke", "desc": "Try to buy something you can't afford at the shop", "hidden": False}
     }
 
+    ACHIEVEMENT_REWARDS = {
+        "it_begins": 20,
+        "likes_birds": 100,
+        "is_a_bird": 200,
+        "a_trade": 30,
+        "too_fast": 100,
+        "pip": 0,
+        "just_why": 30,
+        "perfect": 250,
+        "scammer": 50,
+        "scammed": 100,
+        "not_again": 1,
+        "top_1": 200,
+        "milk": 10,
+        "luck": 100,
+        "rich_bird": 200,
+        "giveaway": 150,
+        "a_real_bird": 131,
+        "rarest": 300,
+        "lets_go_gambling": 10,
+        "aww_dang_it": 20,
+        "skill_issue": 100,
+        "why_ping": 35,
+        "mispell_bird": 50,
+        "triple_loss": 100,
+        "big_bet": 200,
+        "generous_rare": 250,
+        "nice_guy": 50,
+        "broke_gambler": 1,
+        "oh_my_god": 50,
+        "its_over": 400,
+        "collector": 500,
+        "ultra_bird": 1000,
+        "god_bird": 15000,
+        "fight_birdbot": 10,
+        "what?????": 30000,
+        "sell_first": 10,
+        "shop_broke": 1
+    }
+
     async def unlock_achievement(self, user_id, ach_id, channel=None, guild_id=None):
         if not guild_id and channel and getattr(channel, "guild", None):
             guild_id = channel.guild.id
@@ -109,12 +149,21 @@ class GamesCog(commands.Cog):
             user_achievements.append(ach_id)
             self.bot.db.save_achievements(guild_id_db, user_id_val, user_achievements)
 
+            reward = self.ACHIEVEMENT_REWARDS.get(ach_id, 0)
+            reward_txt = ""
+            if reward > 0 and guild_id_db > 0:
+                try:
+                    self.bot.db.add_birdcoin(guild_id_db, user_id_val, reward)
+                    reward_txt = f"\n🪙 **+{reward:,} BirdCoin**"
+                except Exception as e:
+                    print(f"[achievement] reward error: {e}")
+
             ach_info = self.ACHIEVEMENTS_LIST.get(ach_id)
             if ach_info and channel:
                 try:
                     embed = discord.Embed(
                         title="🏆 Achievement Unlocked!",
-                        description=f"<@{user_id}> has successfully unlocked:\n**{ach_info['name']}** — *{ach_info['desc']}*",
+                        description=f"<@{user_id}> has successfully unlocked:\n**{ach_info['name']}** — *{ach_info['desc']}*{reward_txt}",
                         color=discord.Color.gold()
                     )
                     await channel.send(embed=embed)
@@ -189,10 +238,12 @@ class GamesCog(commands.Cog):
 
         description = ""
         for ach_id, info in self.ACHIEVEMENTS_LIST.items():
+            reward = self.ACHIEVEMENT_REWARDS.get(ach_id, 0)
+            reward_txt = f" 🪙{reward:+}" if reward > 0 else ""
             if ach_id in user_achievements:
-                description += f"✅ **{info['name']}** — *{info['desc']}*\n"
+                description += f"✅ **{info['name']}** — *{info['desc']}*{reward_txt}\n"
             elif not info.get("hidden", False):
-                description += f"❌ **{info['name']}** — *{info['desc']}*\n"
+                description += f"❌ **{info['name']}** — *{info['desc']}*{reward_txt}\n"
             else:
                 description += f"❌ *???*\n"
 

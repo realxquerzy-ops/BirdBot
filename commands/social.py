@@ -153,6 +153,13 @@ class TradeConfirmView(discord.ui.View):
     async def unlock_achievement(self, user_id, ach_id, channel=None):
         user_id_val = int(user_id)
         guild_id_val = int(self.guild_id)
+        games_cog = self.bot.get_cog("GamesCog")
+        if games_cog:
+            try:
+                await games_cog.unlock_achievement(user_id_val, ach_id, channel, guild_id=guild_id_val)
+                return
+            except Exception as e:
+                print(f"[trade] achievement unlock error: {e}")
 
         user_achievements = self.bot.db.get_achievements(guild_id_val, user_id_val)
         if ach_id not in user_achievements:
