@@ -49,14 +49,20 @@ def parse_bird_counts(bot, text, inventory_counts):
 def _make_fake_interaction(message):
     class _FakeResponse:
         async def edit_message(self, **kwargs):
-            await message.edit(**kwargs)
+            try:
+                await message.edit(**kwargs)
+            except:
+                pass
 
         def is_done(self):
             return True
 
     class _FakeFollowup:
         async def edit_message(self, message_id=None, **kwargs):
-            await message.edit(**kwargs)
+            try:
+                await message.edit(**kwargs)
+            except:
+                pass
 
         async def send(self, *args, **kwargs):
             return message
@@ -69,7 +75,10 @@ def _make_fake_interaction(message):
             self.channel = message.channel
 
         async def edit_original_response(self, **kwargs):
-            await message.edit(**kwargs)
+            try:
+                await message.edit(**kwargs)
+            except:
+                pass
 
     return _FakeInteraction()
 
@@ -611,7 +620,7 @@ class AutoBattleView(discord.ui.View):
                     f"🔵 **{self.attacker.name}** attacks with: **{fmt_commit(self.atk_commit)}** (power `{int(atk_val)}`)\n"
                     f"🟢 **{self.defender.name}** must send birds to defend!\n"
                     f"{timer_line}\n\n"
-                    f"💡 If no birds sent in time, **{self.attacker.name}** wins automatically!"
+                    f"💡 If no birds are sent, the round ends."
                     f"{friendly_note}"
                 ),
                 color=discord.Color.green() if self.friendly else discord.Color.orange()
@@ -641,7 +650,7 @@ class AutoBattleView(discord.ui.View):
                     f"🔵 **{self.attacker.name}** defeated your birds!\n"
                     f"🟢 **{self.defender.name}** has one last chance — send more birds!\n"
                     f"{timer_line}\n\n"
-                    f"💡 If no birds sent, **{self.attacker.name}** wins the battle!"
+                    f"💡 If no birds are sent, the battle ends."
                     f"{friendly_note}"
                 ),
                 color=discord.Color.red()
@@ -689,30 +698,15 @@ class AutoBattleView(discord.ui.View):
                 title="⚔️ Battle Over!",
                 description=(
                     f"🔵 **{self.attacker.name}** attacked **{self.defender.name}**!\n"
-                    f"🟢 **{self.defender.name}** failed to send birds in time!\n"
-                    f"💥 **{self.attacker.mention}** wins by default!"
+                    f"🟢 **{self.defender.name}** sent no birds.\n"
+                    f"💥 **{self.attacker.mention}** wins!"
                 ),
                 color=discord.Color.green()
             )
             await self._finish(embed)
         else:
             # Resolve battle with whatever birds were sent
-            class FakeInteraction:
-                def __init__(self, message):
-                    self.message = message
-                    self.response = self
-                async def edit_message(self, **kwargs):
-                    try:
-                        await self.message.edit(**kwargs)
-                    except:
-                        pass
-                async def edit_original_response(self, **kwargs):
-                    try:
-                        await self.message.edit(**kwargs)
-                    except:
-                        pass
-            
-            fake_interaction = FakeInteraction(self._expiry_msg or self.message)
+            fake_interaction = _make_fake_interaction(self._expiry_msg or self.message)
             await self._resolve_battle(fake_interaction)
 
     async def _resolve_extension_timeout(self):
@@ -720,8 +714,8 @@ class AutoBattleView(discord.ui.View):
         embed = discord.Embed(
             title="⚔️ Battle Over!",
             description=(
-                f"🟢 **{self.defender.name}** failed to send more birds!\n"
-                f"💥 **{self.attacker.mention}** wins the battle!"
+                f"🟢 **{self.defender.name}** sent no more birds.\n"
+                f"💥 **{self.attacker.mention}** wins!"
             ),
             color=discord.Color.green()
         )
@@ -861,13 +855,11 @@ class AutoBattleView(discord.ui.View):
         result_lines = []
         if attacker_wins:
             result_lines.append(
-                f"⚔️ **{attacker.name}** attacked **{defender.name}** and **{defender.name}** couldn't defend! "
-                f"**{attacker.name}** wins!"
+                f"💥 **{attacker.name}** wins the battle against **{defender.name}**!"
             )
         else:
             result_lines.append(
-                f"⚔️ **{attacker.name}** attacked **{defender.name}** but **{defender.name}** defended successfully! "
-                f"**{defender.name}** wins!"
+                f"🛡️ **{defender.name}** defends and wins the battle against **{attacker.name}**!"
             )
         if self.friendly:
             result_lines.append("✨ Friendly battle — no birds were lost and no powerups were used!")
@@ -1727,13 +1719,11 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
     result_lines = []
     if attacker_wins:
         result_lines.append(
-            f"⚔️ **{attacker.name}** attacked **{defender.name}** and **{defender.name}** couldn't defend! "
-            f"**{attacker.name}** wins!"
+            f"💥 **{attacker.name}** wins the battle against **{defender.name}**!"
         )
     else:
         result_lines.append(
-            f"⚔️ **{attacker.name}** attacked **{defender.name}** but **{defender.name}** defended successfully! "
-            f"**{defender.name}** wins!"
+            f"🛡️ **{defender.name}** defends and wins the battle against **{attacker.name}**!"
         )
     if friendly:
         result_lines.append("✨ Friendly battle — no birds were lost and no powerups were used!")
