@@ -251,13 +251,14 @@ class FightAddSelect(discord.ui.Select):
 
 
 class FightSetupView(discord.ui.View):
-    def __init__(self, bot, attacker, target, guild_id, is_boss=False):
+    def __init__(self, bot, attacker, target, guild_id, is_boss=False, friendly=False):
         super().__init__(timeout=60)
         self.bot = bot
         self.attacker = attacker
         self.target = target
         self.guild_id = str(guild_id)
         self.is_boss = is_boss
+        self.friendly = friendly
 
         inv = bot.db.get_inventory(int(guild_id), attacker.id)
         self.max_pool = {attacker.id: Counter(inv)}
@@ -270,14 +271,16 @@ class FightSetupView(discord.ui.View):
     def build_embed(self):
         commit = self.commit[self.attacker.id]
         val = commit_value(self.bot, commit)
+        friendly_line = "\n✨ **Friendly battle** — no birds lost, no powerups!" if self.friendly else ""
         embed = discord.Embed(
-            title="⚔️ Challenge Setup",
+            title="⚔️ Friendly Challenge Setup" if self.friendly else "⚔️ Challenge Setup",
             description=(
                 f"🔵 **{self.attacker.name}** commits to battle: **{fmt_commit(commit)}**\n"
                 f"💪 Total battle power: `{int(val)}`\n\n"
                 f"Select birds to send for the fight, then press **⚔️ Challenge!**"
+                f"{friendly_line}"
             ),
-            color=discord.Color.blurple()
+            color=discord.Color.green() if self.friendly else discord.Color.blurple()
         )
         embed.set_footer(text="You can only send birds you actually own.")
         return embed
@@ -295,7 +298,7 @@ class FightSetupView(discord.ui.View):
         await interaction.response.defer()
 
         if self.is_boss:
-            view = BirdBotAutoBattleView(self.bot, self.attacker, self.target, self.guild_id, dict(self.commit[self.attacker.id]))
+            view = BirdBotAutoBattleView(self.bot, self.attacker, self.target, self.guild_id, dict(self.commit[self.attacker.id]), friendly=self.friendly)
             view._expiry_msg = interaction.message
             await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
             self.stop()
@@ -309,7 +312,7 @@ class FightSetupView(discord.ui.View):
                     def_inv = self.bot.db.get_inventory(int(self.guild_id), self.target.id)
                     view = AutoBattleView(
                         self.bot, self.attacker, self.target, self.guild_id,
-                        dict(self.commit[self.attacker.id]), def_inv
+                        dict(self.commit[self.attacker.id]), def_inv, friendly=self.friendly
                     )
                     view.autodefend = dict(auto)
                     view._turns = 2
@@ -327,7 +330,7 @@ class FightSetupView(discord.ui.View):
                     self.stop()
                     return
 
-        view = FightChallengeView(self.bot, self.attacker, self.target, self.guild_id, dict(self.commit[self.attacker.id]))
+        view = FightChallengeView(self.bot, self.attacker, self.target, self.guild_id, dict(self.commit[self.attacker.id]), friendly=self.friendly)
         remaining = view._deadline - time.time()
         view._expiry_msg = await interaction.channel.send(
             content=f"⚔️ **{self.attacker.mention}** has challenged **{self.target.mention}** to a battle!",
@@ -359,13 +362,14 @@ class FightSetupView(discord.ui.View):
 
 
 class FightChallengeView(discord.ui.View):
-    def __init__(self, bot, attacker, defender, guild_id, atk_commit):
+    def __init__(self, bot, attacker, defender, guild_id, atk_commit, friendly=False):
         super().__init__(timeout=None)
         self.bot = bot
         self.attacker = attacker
         self.defender = defender
         self.guild_id = str(guild_id)
         self.atk_commit = atk_commit
+        self.friendly = friendly
         self._resolving = False
         self._deadline = time.time() + 60
         self._timer_task = asyncio.create_task(self._countdown())
@@ -387,17 +391,18 @@ class FightChallengeView(discord.ui.View):
                 f"\n⏳ **{self.defender.name}** has `{max(0, int(remaining))}s` to respond!\n"
                 f"💤 If time runs out, it counts as **Ignore** and the attacker may strike!"
             )
+        friendly_line = "\n\n✨ **Friendly battle** — no birds lost, no powerups!" if self.friendly else ""
         return discord.Embed(
-            title="⚔️ Battle Challenge!",
+            title="⚔️ Friendly Battle Challenge!" if self.friendly else "⚔️ Battle Challenge!",
             description=(
                 f"🔵 **{self.attacker.name}** is attacking with: **{fmt_commit(self.atk_commit)}**\n"
                 f"💪 Total battle power: `{int(val)}`\n\n"
                 f"**{self.defender.name}**, choose:\n"
                 f"⚔️ **Fight Back** — send your own birds into battle\n"
                 f"🕶️ **Ignore** — refuse the fight (the attacker may still strike!)"
-                f"{timer_line}"
+                f"{timer_line}{friendly_line}"
             ),
-            color=discord.Color.blurple()
+            color=discord.Color.green() if self.friendly else discord.Color.blurple()
         )
 
     async def _countdown(self):
@@ -440,6 +445,14 @@ class FightChallengeView(discord.ui.View):
             traceback.print_exc()
 
     async def _resolve_ignore(self, interaction=None):
+        if self.friendly:
+            embed = discord.Embed(
+                title="✨ Friendly Battle Cancelled!",
+                description=f"**{self.defender.name}** declined the friendly battle — nothing happened, no birds lost.",
+                color=discord.Color.greyple()
+            )
+            await self._finish(embed, interaction)
+            return
         chance, steal_num = attack_roll(self.bot, self.atk_commit)
         guild_id_int = int(self.guild_id)
 
@@ -535,7 +548,7 @@ class FightChallengeView(discord.ui.View):
                 await interaction.followup.send("❌ You don't have any birds to fight with!", ephemeral=True)
                 return
 
-            view = AutoBattleView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit), def_inv)
+            view = AutoBattleView(self.bot, self.attacker, self.defender, self.guild_id, dict(self.atk_commit), def_inv, friendly=self.friendly)
             view._expiry_msg = interaction.message
             await interaction.edit_original_response(content=None, embed=view.build_embed(), view=view)
             self.stop()
@@ -553,7 +566,7 @@ class FightChallengeView(discord.ui.View):
 
 
 class AutoBattleView(discord.ui.View):
-    def __init__(self, bot, attacker, defender, guild_id, atk_commit, def_inv):
+    def __init__(self, bot, attacker, defender, guild_id, atk_commit, def_inv, friendly=False):
         super().__init__(timeout=None)
         self.bot = bot
         self.attacker = attacker
@@ -562,6 +575,7 @@ class AutoBattleView(discord.ui.View):
         self.atk_commit = Counter(atk_commit)
         self.def_commit = Counter()
         self.def_inv = def_inv
+        self.friendly = friendly
         self.phase = "waiting"  # waiting, battling, extension
         self._timer_task = None
         self._deadline = time.time() + 30
@@ -587,18 +601,20 @@ class AutoBattleView(discord.ui.View):
     def build_embed(self, remaining=None):
         atk_val = commit_value(self.bot, self.atk_commit)
         def_val = commit_value(self.bot, self.def_commit)
+        friendly_note = "\n✨ **Friendly battle** — nothing is lost!" if self.friendly else ""
         
         if self.phase == "waiting":
             timer_line = f"\n⏳ **{self.defender.name}** has `{max(0, int(remaining))}s` to send birds!" if remaining is not None else ""
             return discord.Embed(
-                title="⚔️ Battle Started!",
+                title="⚔️ Friendly Battle Started!" if self.friendly else "⚔️ Battle Started!",
                 description=(
                     f"🔵 **{self.attacker.name}** attacks with: **{fmt_commit(self.atk_commit)}** (power `{int(atk_val)}`)\n"
                     f"🟢 **{self.defender.name}** must send birds to defend!\n"
                     f"{timer_line}\n\n"
                     f"💡 If no birds sent in time, **{self.attacker.name}** wins automatically!"
+                    f"{friendly_note}"
                 ),
-                color=discord.Color.orange()
+                color=discord.Color.green() if self.friendly else discord.Color.orange()
             )
         elif self.phase == "battling":
             total = atk_val + def_val
@@ -626,6 +642,7 @@ class AutoBattleView(discord.ui.View):
                     f"🟢 **{self.defender.name}** has one last chance — send more birds!\n"
                     f"{timer_line}\n\n"
                     f"💡 If no birds sent, **{self.attacker.name}** wins the battle!"
+                    f"{friendly_note}"
                 ),
                 color=discord.Color.red()
             )
@@ -822,19 +839,20 @@ class AutoBattleView(discord.ui.View):
         shield_broke = False
         taken = []
 
-        if powerups_cog and powerups_cog.has_shield(guild_id_int, loser.id):
-            shield_saved = powerups_cog.consume_shield(guild_id_int, loser.id)
-            shield_broke = not shield_saved
-        if not shield_saved:
-            expanded = []
-            for bird, n in loser_commit.items():
-                expanded.extend([bird] * n)
-            random.shuffle(expanded)
-            half = expanded[: len(expanded) // 2] if expanded else []
-            taken = transfer_birds(self.bot, guild_id_int, loser.id, winner.id, half)
+        if not self.friendly:
+            if powerups_cog and powerups_cog.has_shield(guild_id_int, loser.id):
+                shield_saved = powerups_cog.consume_shield(guild_id_int, loser.id)
+                shield_broke = not shield_saved
+            if not shield_saved:
+                expanded = []
+                for bird, n in loser_commit.items():
+                    expanded.extend([bird] * n)
+                random.shuffle(expanded)
+                half = expanded[: len(expanded) // 2] if expanded else []
+                taken = transfer_birds(self.bot, guild_id_int, loser.id, winner.id, half)
 
         loot = ""
-        if powerups_cog and not shield_saved:
+        if not self.friendly and powerups_cog and not shield_saved:
             drop = powerups_cog.random_drop()
             if drop:
                 powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
@@ -851,7 +869,9 @@ class AutoBattleView(discord.ui.View):
                 f"⚔️ **{attacker.name}** attacked **{defender.name}** but **{defender.name}** defended successfully! "
                 f"**{defender.name}** wins!"
             )
-        if shield_saved:
+        if self.friendly:
+            result_lines.append("✨ Friendly battle — no birds were lost and no powerups were used!")
+        elif shield_saved:
             result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
         else:
             if shield_broke:
@@ -882,10 +902,11 @@ class AutoBattleView(discord.ui.View):
         
         # Log battle
         try:
-            self.bot.db.log_battle(
-                guild_id_int, attacker.id, defender.id, winner.id,
-                dict(attacker_commit), dict(defender_commit), dict(Counter(taken))
-            )
+            if not self.friendly:
+                self.bot.db.log_battle(
+                    guild_id_int, attacker.id, defender.id, winner.id,
+                    dict(attacker_commit), dict(defender_commit), dict(Counter(taken))
+                )
         except Exception as e:
             print(f"[battle-log] Failed to log battle: {e}")
         
@@ -1245,6 +1266,70 @@ class FightCog(commands.Cog):
             print(f"Error in fight command: {e}")
             await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
 
+    @discord.app_commands.command(name="friendlybattle", description="Challenge someone to a friendly battle (no birds lost, no powerups)")
+    @discord.app_commands.describe(member="The user you want to battle")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def friendlybattle(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer()
+        try:
+            if not interaction.guild:
+                await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+                return
+
+            if member == interaction.user:
+                await interaction.followup.send("❌ You cannot battle yourself!", ephemeral=True)
+                return
+
+            if member.id == self.bot.user.id:
+                return await self._fight_birdbot(interaction, friendly=True)
+
+            if member.bot:
+                await interaction.followup.send("❌ You cannot battle other bots!", ephemeral=True)
+                return
+
+            if not is_active(self.bot, member):
+                real_status = self.bot.presence_cache.get(member.id, member.status)
+                status_txt = STATUS_TEXT.get(real_status, real_status)
+                await interaction.followup.send(
+                    f"❌ **{member.display_name}** is **{status_txt}** and not active right now! "
+                    f"You can only battle active users.",
+                    ephemeral=True
+                )
+                return
+
+            guild_id = interaction.guild.id
+            user_birds = self.bot.db.get_inventory(guild_id, interaction.user.id)
+            if not user_birds:
+                await interaction.followup.send("❌ You don't have any birds to battle with!", ephemeral=True)
+                return
+
+            try:
+                view = FightSetupView(self.bot, interaction.user, member, str(guild_id), friendly=True)
+            except Exception as e:
+                print(f"[fight] FightSetupView init error: {e}")
+                import traceback
+                traceback.print_exc()
+                await interaction.followup.send(f"❌ Setup error: {e}", ephemeral=True)
+                return
+
+            try:
+                msg = await interaction.followup.send(
+                    content=f"✨ **{interaction.user.mention}** challenges **{member.mention}** to a friendly battle!",
+                    embed=view.build_embed(),
+                    view=view
+                )
+                view._expiry_msg = msg
+            except Exception as e:
+                print(f"[fight] followup send error: {e}")
+                import traceback
+                traceback.print_exc()
+                await interaction.followup.send(f"❌ Send error: {e}", ephemeral=True)
+                return
+        except Exception as e:
+            print(f"Error in friendlybattle command: {e}")
+            await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
+
     @discord.app_commands.command(name="battlelog", description="View your recent battle history")
     @discord.app_commands.describe(member="User to check (defaults to yourself)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
@@ -1441,7 +1526,7 @@ class FightCog(commands.Cog):
             ephemeral=True
         )
 
-    async def _fight_birdbot(self, interaction: discord.Interaction):
+    async def _fight_birdbot(self, interaction: discord.Interaction, friendly=False):
         """Normal fight flow — BirdBot instantly accepts and guards with 999 Radioactive Birds"""
         guild_id = interaction.guild.id
         user_birds = self.bot.db.get_inventory(guild_id, interaction.user.id)
@@ -1450,7 +1535,7 @@ class FightCog(commands.Cog):
             return
 
         try:
-            view = FightSetupView(self.bot, interaction.user, self.bot.user, str(guild_id), is_boss=True)
+            view = FightSetupView(self.bot, interaction.user, self.bot.user, str(guild_id), is_boss=True, friendly=friendly)
             msg = await interaction.followup.send(
                 content=f"⚔️ **{interaction.user.mention}** is preparing a battle against **{self.bot.user.mention}**!",
                 embed=view.build_embed(),
@@ -1474,7 +1559,7 @@ async def setup(bot):
 class BirdBotAutoBattleView(discord.ui.View):
     BOSS_BIRD = "Radioactive Bird"
 
-    def __init__(self, bot, attacker, defender, guild_id, atk_commit):
+    def __init__(self, bot, attacker, defender, guild_id, atk_commit, friendly=False):
         super().__init__(timeout=None)
         self.bot = bot
         self.attacker = attacker
@@ -1482,6 +1567,7 @@ class BirdBotAutoBattleView(discord.ui.View):
         self.guild_id = str(guild_id)
         self.atk_commit = Counter(atk_commit)
         self.def_commit = Counter({BirdBotAutoBattleView.BOSS_BIRD: 999})
+        self.friendly = friendly
         self._resolving = False
         self._deadline = time.time() + 60
         self._timer_task = asyncio.create_task(self._countdown())
@@ -1508,7 +1594,7 @@ class BirdBotAutoBattleView(discord.ui.View):
                 f"if **⚔️ Fight!** isn't pressed!"
             )
         return discord.Embed(
-            title="⚔️ Battle Started!",
+            title="⚔️ Friendly Battle Started!" if self.friendly else "⚔️ Battle Started!",
             description=(
                 f"🔵 **{self.attacker.name}**: **{fmt_commit(self.atk_commit)}** (power `{int(atk_val)}`)\n"
                 f"🟢 **{self.defender.name}**: **{fmt_commit(self.def_commit)}** (power `{int(def_val)}`)\n\n"
@@ -1516,7 +1602,7 @@ class BirdBotAutoBattleView(discord.ui.View):
                 f"**{self.defender.name}** instantly readies **999x Radioactive Bird**!\n"
                 f"Press **⚔️ Fight!** to start the battle.{timer_line}"
             ),
-            color=discord.Color.dark_red()
+            color=discord.Color.green() if self.friendly else discord.Color.dark_red()
         )
 
     async def _countdown(self):
@@ -1595,6 +1681,7 @@ class BirdBotAutoBattleView(discord.ui.View):
 
 async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commit, defender_commit):
     guild_id_int = int(guild_id)
+    friendly = getattr(view, "friendly", False)
     atk_val = commit_value(bot, attacker_commit)
     def_val = commit_value(bot, defender_commit)
     total = atk_val + def_val
@@ -1615,22 +1702,23 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
     shield_broke = False
     taken = []
 
-    if powerups_cog and powerups_cog.has_shield(guild_id_int, loser.id):
-        shield_saved = powerups_cog.consume_shield(guild_id_int, loser.id)
-        shield_broke = not shield_saved
-    if not shield_saved:
-        if loser.id == bot.user.id:
-            taken = []
-        else:
-            expanded = []
-            for bird, n in loser_commit.items():
-                expanded.extend([bird] * n)
-            random.shuffle(expanded)
-            half = expanded[: len(expanded) // 2] if expanded else []
-            taken = transfer_birds(bot, guild_id_int, loser.id, winner.id, half)
+    if not friendly:
+        if powerups_cog and powerups_cog.has_shield(guild_id_int, loser.id):
+            shield_saved = powerups_cog.consume_shield(guild_id_int, loser.id)
+            shield_broke = not shield_saved
+        if not shield_saved:
+            if loser.id == bot.user.id:
+                taken = []
+            else:
+                expanded = []
+                for bird, n in loser_commit.items():
+                    expanded.extend([bird] * n)
+                random.shuffle(expanded)
+                half = expanded[: len(expanded) // 2] if expanded else []
+                taken = transfer_birds(bot, guild_id_int, loser.id, winner.id, half)
 
     loot = ""
-    if powerups_cog and not shield_saved and winner.id != bot.user.id:
+    if not friendly and powerups_cog and not shield_saved and winner.id != bot.user.id:
         drop = powerups_cog.random_drop()
         if drop:
             powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
@@ -1647,7 +1735,9 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
             f"⚔️ **{attacker.name}** attacked **{defender.name}** but **{defender.name}** defended successfully! "
             f"**{defender.name}** wins!"
         )
-    if shield_saved:
+    if friendly:
+        result_lines.append("✨ Friendly battle — no birds were lost and no powerups were used!")
+    elif shield_saved:
         result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
     elif shield_broke:
         result_lines.append(f"💔 **{loser.name}**'s Shield shattered and couldn't protect them!")
@@ -1659,7 +1749,7 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
 
     msg = getattr(view, "_expiry_msg", None) or view.message
 
-    if attacker_wins and defender.id == bot.user.id:
+    if not friendly and attacker_wins and defender.id == bot.user.id:
         try:
             games_cog = bot.get_cog("GamesCog")
             if games_cog:
@@ -1691,8 +1781,9 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
     )
 
     try:
-        bot.db.log_battle(guild_id_int, attacker.id, defender.id, winner.id,
-            dict(attacker_commit), dict(defender_commit), dict(Counter(taken)))
+        if not friendly:
+            bot.db.log_battle(guild_id_int, attacker.id, defender.id, winner.id,
+                dict(attacker_commit), dict(defender_commit), dict(Counter(taken)))
     except Exception as e:
         print(f"[battle-log] Failed to log battle: {e}")
 
