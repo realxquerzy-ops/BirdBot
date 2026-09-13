@@ -60,7 +60,7 @@ class CoreCog(commands.Cog):
             pass
         if boost <= 0:
             return self.spawn_weights
-        exp = max(0.4, 1.0 - 0.03 * boost)
+        exp = max(0.4, 1.0 - 0.05 * boost)
         return [float(bird["weight"]) ** exp for bird in self.bot.birds]
 
     @tasks.loop(seconds=30.0)

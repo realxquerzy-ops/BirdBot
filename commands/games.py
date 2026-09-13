@@ -13,7 +13,7 @@ class BoostView(discord.ui.View):
         self.guild_id = guild_id
         self.guild_name = guild_name
 
-    @discord.ui.button(label="⚡ Boost — +3% rarity", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="⚡ Boost — +5% rarity", style=discord.ButtonStyle.primary)
     async def boost_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
 
@@ -25,10 +25,7 @@ class BoostView(discord.ui.View):
         cost = (current + 1) * 1000
         balance = self.cog.bot.db.get_birdcoin(self.guild_id, interaction.user.id)
         if balance < cost:
-            await interaction.followup.send(
-                f"❌ Not enough BirdCoin! You need **{cost:,}** coins (you have **{balance:,.0f}**).",
-                ephemeral=True
-            )
+            await interaction.followup.send("❌ Not enough BirdCoin to boost this server!", ephemeral=True)
             return
 
         self.cog.bot.db.remove_birdcoin(self.guild_id, interaction.user.id, cost)
@@ -287,8 +284,7 @@ class GamesCog(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     def build_boost_embed(self, guild_name, current, balance):
-        pct = current * 3
-        next_cost = f"{(current + 1) * 1000:,} coins" if current < 20 else "Max reached"
+        pct = current * 5
         progress = "🟩" * current + "⬜" * (20 - current)
 
         embed = discord.Embed(
@@ -297,10 +293,9 @@ class GamesCog(commands.Cog):
         )
         embed.add_field(name="Level", value=f"{current}/20", inline=True)
         embed.add_field(name="Spawn Rarity", value=f"+{pct}%", inline=True)
-        embed.add_field(name="Next Boost Cost", value=next_cost, inline=True)
         embed.add_field(name="Progress", value=progress, inline=False)
         embed.add_field(name="Your Balance", value=f"{balance:,.0f} BirdCoin", inline=True)
-        embed.set_footer(text="Each boost costs n × 1,000 BirdCoin and makes spawns 3% rarer.")
+        embed.set_footer(text="Each boost makes rare birds 5% more likely to spawn.")
         return embed
 
     @discord.app_commands.command(name="boostinfo", description="Show this server's boost level")
