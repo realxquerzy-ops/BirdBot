@@ -169,7 +169,6 @@ async def on_tree_error(interaction: discord.Interaction, error: Exception):
 @bot.event
 async def on_presence_update(before, after):
     if before.status != after.status:
-        print(f"[presence] {after} ({after.id}) -> {after.status} | bot: {after.bot}")
         bot.presence_cache[after.id] = after.status
 
 @bot.event

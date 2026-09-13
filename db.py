@@ -9,13 +9,17 @@ class Database:
     def __init__(self, database_url):
         parsed = urlparse(database_url)
         self._pool = ThreadedConnectionPool(
-            1, 10,
+            3, 20,
             database=parsed.path[1:],
             user=parsed.username,
             password=parsed.password,
             host=parsed.hostname,
             port=parsed.port,
             connect_timeout=5,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+            application_name="birdbot",
             options="-c statement_timeout=5000 -c lock_timeout=3000",
         )
 
