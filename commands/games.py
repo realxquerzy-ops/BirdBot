@@ -367,11 +367,13 @@ class GamesCog(commands.Cog):
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
             return
 
+        await interaction.response.defer()
+
         guild_id = interaction.guild.id
         current = self.bot.db.get_guild_boost(guild_id)
         balance = self.bot.db.get_birdcoin(guild_id, interaction.user.id)
         embed = self.build_boost_embed(interaction.guild.name, current, balance)
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="boost", description="Boost this server's spawn rarity with BirdCoin (max 20)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
@@ -381,12 +383,14 @@ class GamesCog(commands.Cog):
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
             return
 
+        await interaction.response.defer()
+
         guild_id = interaction.guild.id
         current = self.bot.db.get_guild_boost(guild_id)
         balance = self.bot.db.get_birdcoin(guild_id, interaction.user.id)
         embed = self.build_boost_embed(interaction.guild.name, current, balance)
         view = BoostView(self, guild_id, interaction.guild.name)
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.followup.send(embed=embed, view=view)
 
     @discord.app_commands.command(name="spawn", description="Spawn a real catchable bird (whitelist only)")
     @discord.app_commands.describe(bird_name="Specific bird to spawn (leave empty for random)")
