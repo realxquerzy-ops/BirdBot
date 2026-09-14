@@ -7,7 +7,7 @@ from discord.ext import commands
 
 class PowerupsCog(commands.Cog):
     POWERUPS = {
-        "shield": {"name": "🛡️ Shield", "desc": "90% chance to protect your birds from a gamble or fight loss", "type": "self"},
+        "shield": {"name": "🛡️ Shield", "desc": "70% chance to protect your birds from a gamble or fight loss", "type": "self"},
         "double_xp": {"name": "⚡ Double XP", "desc": "2x BirdPass XP for your next 5 catches", "type": "self"},
         "double_catch": {"name": "🍀 Lucky Net", "desc": "20% chance to double your bird for the next 5 catches", "type": "self"},
         "sab_miss": {"name": "🪃 Distraction", "desc": "Makes a player's next catch fail (bird escapes)", "type": "sabotage"},
@@ -130,7 +130,7 @@ class PowerupsCog(commands.Cog):
             entry["shield"] -= 1
             if entry.get("shield", 0) <= 0:
                 entry.pop("shield", None)
-            return random.random() < 0.9
+            return random.random() < 0.7
         return False
 
     def active_self_text(self, guild_id, user_id):
