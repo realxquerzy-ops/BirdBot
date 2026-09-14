@@ -539,6 +539,12 @@ class GamesCog(commands.Cog):
     async def gamble(self, interaction: discord.Interaction, bird_name: str, amount: str):
         await interaction.response.defer(ephemeral=False)
         try:
+            await interaction.followup.send(
+                "⚠️ **/gamble şu an geçici olarak kapalı!**\n"
+                "Ekonomi dengesini bozduğu için kapatıldı — denge ayarlanınca tekrar açılacak.",
+                ephemeral=True
+            )
+            return
             if not interaction.guild:
                 await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
                 return

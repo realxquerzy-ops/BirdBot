@@ -12,7 +12,7 @@ class PowerupsCog(commands.Cog):
         "double_catch": {"name": "🍀 Lucky Net", "desc": "20% chance to double your bird for the next 5 catches", "type": "self"},
         "sab_miss": {"name": "🪃 Distraction", "desc": "Makes a player's next catch fail (bird escapes)", "type": "sabotage"},
         "sab_half_xp": {"name": "📉 Demotivate", "desc": "Halves a player's BirdPass XP for their next 3 catches", "type": "sabotage"},
-        "sab_steal": {"name": "🕵️ Pocket", "desc": "Instantly steal 1 random bird from a player", "type": "sabotage"},
+        "sab_steal": {"name": "🕵️ Pocket", "desc": "50% chance to steal 1 bird from a player (rarer birds are harder to steal)", "type": "sabotage"},
         "golden_gut": {"name": "🪙 Golden Gut", "desc": "+50% BirdCoin from your next 3 sells", "type": "self"},
         "bigger_net": {"name": "🔭 Bigger Net", "desc": "Guaranteed double bird for your next 5 catches", "type": "self"},
         "scarecrow": {"name": "🧹 Scarecrow", "desc": "Blocks the next sabotage aimed at you", "type": "self"},
@@ -252,7 +252,7 @@ class PowerupsCog(commands.Cog):
             if powerup == "shield":
                 entry = self._self_entry(guild_id, user_id)
                 entry["shield"] = entry.get("shield", 0) + 1
-                desc = f"🛡️ **{interaction.user.mention}** equipped a Shield! 90% chance to protect them from the next loss."
+                desc = f"🛡️ **{interaction.user.mention}** equipped a Shield! 70% chance to protect them from the next loss."
 
             elif powerup == "double_xp":
                 entry = self._self_entry(guild_id, user_id)
@@ -275,8 +275,18 @@ class PowerupsCog(commands.Cog):
                 desc = f"📉 **{interaction.user.mention}** demotivated **{member.mention}**! Half BirdPass XP for their next 3 catches."
 
             elif powerup == "sab_steal":
-                stolen = random.choice(target_inv)
-                target_inv.remove(stolen)
+                success = random.random() < 0.5
+                if not success:
+                    embed = discord.Embed(
+                        title="🕵️ Pickpocket Failed!",
+                        description=f"🕵️ **{interaction.user.mention}** tried to pickpocket **{member.mention}** but they noticed and nothing was stolen!",
+                        color=discord.Color.purple()
+                    )
+                    await interaction.followup.send(embed=embed)
+                    return
+                weights = [1.0 / max(self.bot.bird_values.get(b, 1), 0.001) for b in target_inv]
+                idx = random.choices(range(len(target_inv)), weights=weights, k=1)[0]
+                stolen = target_inv.pop(idx)
                 self.bot.db.save_inventory(guild_id, member.id, target_inv)
                 my_inv = self.bot.db.get_inventory(guild_id, user_id)
                 my_inv.append(stolen)
