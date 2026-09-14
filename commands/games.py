@@ -540,8 +540,8 @@ class GamesCog(commands.Cog):
         await interaction.response.defer(ephemeral=False)
         try:
             await interaction.followup.send(
-                "⚠️ **/gamble şu an geçici olarak kapalı!**\n"
-                "Ekonomi dengesini bozduğu için kapatıldı — denge ayarlanınca tekrar açılacak.",
+                "⚠️ **/gamble is temporarily disabled!**\n"
+                "It was turned off because it broke the economy — it will be back once the balance is fixed.",
                 ephemeral=True
             )
             return
