@@ -7,21 +7,21 @@ from psycopg2.pool import ThreadedConnectionPool
 
 class Database:
     def __init__(self, database_url):
-        parsed = urlparse(database_url)
-        self._pool = ThreadedConnectionPool(
-            3, 20,
-            database=parsed.path[1:],
-            user=parsed.username,
-            password=parsed.password,
-            host=parsed.hostname,
-            port=parsed.port,
+        host = urlparse(database_url).hostname or ""
+        self._is_neon_pooler = "-pooler." in host
+        kwargs = dict(
             connect_timeout=5,
             keepalives_idle=30,
             keepalives_interval=10,
             keepalives_count=3,
             application_name="birdbot",
-            options="-c statement_timeout=5000 -c lock_timeout=3000",
         )
+        # Neon poolers reject the startup `options` parameter - only send it on
+        # direct (unpooled) connections. sslmode etc. are preserved from the URL
+        # by passing the full DSN to psycopg2.
+        if not self._is_neon_pooler:
+            kwargs["options"] = "-c statement_timeout=5000 -c lock_timeout=3000"
+        self._pool = ThreadedConnectionPool(2, 6, database_url, **kwargs)
 
     def close(self):
         self._pool.closeall()
