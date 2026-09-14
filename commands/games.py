@@ -55,6 +55,7 @@ class GamesCog(commands.Cog):
         self.rarest_bird = min(valid_birds, key=lambda x: float(x["weight"])) if valid_birds else None
         self.catch_streaks = {}
         self.gamble_losses = {}
+        self.last_gamble = {}
 
     ACHIEVEMENTS_LIST = {
         "it_begins": {"name": "It begins...", "desc": "Catch your first bird", "hidden": False},
@@ -539,12 +540,17 @@ class GamesCog(commands.Cog):
     async def gamble(self, interaction: discord.Interaction, bird_name: str, amount: str):
         await interaction.response.defer(ephemeral=False)
         try:
-            await interaction.followup.send(
-                "⚠️ **/gamble is temporarily disabled!**\n"
-                "It was turned off because it broke the economy — it will be back once the balance is fixed.",
-                ephemeral=True
-            )
-            return
+            now = int(time.time())
+            last = self.last_gamble.get(interaction.user.id, 0)
+            remaining = 300 - (now - last)
+            if remaining > 0:
+                await interaction.followup.send(
+                    f"⏳ You can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s** "
+                    f"(once every 5 minutes).",
+                    ephemeral=True
+                )
+                return
+            self.last_gamble[interaction.user.id] = now
             if not interaction.guild:
                 await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
                 return
@@ -572,7 +578,7 @@ class GamesCog(commands.Cog):
 
             is_all = False
             if amount.lower() == "all":
-                number = min(current_count, 100)
+                number = min(current_count, 20)
                 is_all = True
             else:
                 try:
@@ -585,8 +591,8 @@ class GamesCog(commands.Cog):
                 await interaction.followup.send(f"❌ Invalid amount! You have `{current_count}` of this bird.", ephemeral=True)
                 return
 
-            if number > 100:
-                number = 100
+            if number > 20:
+                number = 20
 
             await self.unlock_achievement(user_id, "lets_go_gambling", interaction.channel, guild_id)
 
