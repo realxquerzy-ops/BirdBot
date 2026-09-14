@@ -1,6 +1,8 @@
 import os
 import random
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import discord
 from discord.ext import commands
@@ -250,6 +252,32 @@ async def _tree_interaction_check(interaction):
     return True
 
 bot.tree.interaction_check = _tree_interaction_check
+
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+def _start_health_server():
+    port = int(os.getenv("PORT", "8080"))
+    server = ThreadingHTTPServer(("0.0.0.0", port), _HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    print(f"[health] Listening on :{port}")
+
+
+_start_health_server()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
