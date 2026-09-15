@@ -95,6 +95,7 @@ class EconomyCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
+        banned = self.bot.db.get_banned_user_ids(guild_id)
         rows = self.bot.db.fetchall(
             "SELECT user_id, birds FROM inventories WHERE guild_id = %s", (guild_id,)
         )
@@ -111,7 +112,7 @@ class EconomyCog(commands.Cog):
         user_totals = []
         for row in rows:
             user_id = row[0]
-            if int(user_id) == self.bot.user.id:
+            if int(user_id) == self.bot.user.id or int(user_id) in banned:
                 continue
             birds = self.bot.db._loads_json(row[1])
             user_totals.append((user_id, self.get_inventory_value(birds), len(birds)))

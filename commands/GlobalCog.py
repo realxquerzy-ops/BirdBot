@@ -26,6 +26,7 @@ class GlobalCog(commands.Cog):
         try:
             fastest_times = getattr(self.bot, "fastest_times", {})
             bird_values = self.bot.bird_values_lower
+            all_global_bans, all_guild_bans = self.bot.db.get_all_bans_map()
 
             # --- SUNUCU BAZLI FİLTRELER ---
             if filter_by in ["server_value", "server_count", "server_fastest_time"]:
@@ -38,7 +39,13 @@ class GlobalCog(commands.Cog):
                 server_inventories_map = {}
                 for row in rows:
                     g_id, u_id, birds_json = str(row[0]), str(row[1]), row[2]
-                    if int(u_id) == self.bot.user.id:
+                    u_int = int(u_id)
+                    g_int = int(g_id)
+                    if u_int == self.bot.user.id:
+                        continue
+                    if u_int in all_global_bans:
+                        continue
+                    if g_int in all_guild_bans and u_int in all_guild_bans[g_int]:
                         continue
                     server_inventories_map.setdefault(g_id, {})[u_id] = self.bot.db._loads_json(birds_json)
 
@@ -91,8 +98,10 @@ class GlobalCog(commands.Cog):
                 rows = self.bot.db.fetchall(
                     "SELECT user_id, birds FROM inventories WHERE guild_id = %s", (int(server_id),)
                 )
+                banned = self.bot.db.get_banned_user_ids(int(server_id))
             else:
                 rows = self.bot.db.fetchall("SELECT user_id, birds FROM inventories")
+                banned = all_global_bans
 
             if not rows:
                 await interaction.followup.send("❌ No inventory data found yet!", ephemeral=True)
@@ -102,6 +111,8 @@ class GlobalCog(commands.Cog):
             for row in rows:
                 u_id = str(row[0])
                 if int(u_id) == self.bot.user.id:
+                    continue
+                if int(u_id) in banned:
                     continue
                 birds_list = self.bot.db._loads_json(row[1])
                 if u_id not in user_stats:

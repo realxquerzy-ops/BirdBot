@@ -280,6 +280,34 @@ class Database:
         )
         return row is not None
 
+    def get_banned_user_ids(self, guild_id):
+        """Return set of user IDs banned in this guild or globally."""
+        rows = self.fetchall(
+            "SELECT DISTINCT user_id FROM birdbot_bans WHERE guild_id = %s OR guild_id = 0",
+            (int(guild_id),),
+        )
+        return {int(r[0]) for r in rows}
+
+    def get_globally_banned_user_ids(self):
+        """Return set of user IDs that are globally banned."""
+        rows = self.fetchall(
+            "SELECT DISTINCT user_id FROM birdbot_bans WHERE guild_id = 0",
+        )
+        return {int(r[0]) for r in rows}
+
+    def get_all_bans_map(self):
+        """Return (global_set, {guild_id: {user_id, ...}}) for all bans."""
+        rows = self.fetchall("SELECT guild_id, user_id FROM birdbot_bans")
+        global_set = set()
+        guild_map = {}
+        for g, u in rows:
+            g, u = int(g), int(u)
+            if g == 0:
+                global_set.add(u)
+            else:
+                guild_map.setdefault(g, set()).add(u)
+        return global_set, guild_map
+
     def get_bans(self, guild_id, user_id=None):
         if user_id is not None:
             rows = self.fetchall(
