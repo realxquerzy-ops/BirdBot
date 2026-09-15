@@ -54,6 +54,10 @@ class CoreCog(commands.Cog):
     def _new_spawn_state(self):
         return {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
 
+    def _schedule_next_spawn(self, guild_id):
+        """Cooldown catch anından itibaren başlasın — hızlı kullanıcılar için anında respawn engeli."""
+        self.next_spawn_times[guild_id] = time.time() + random.randint(120, 240)
+
     def spawn_weights_for(self, guild_id):
         boost = 0
         try:
@@ -123,7 +127,7 @@ class CoreCog(commands.Cog):
                     state["name"] = None
                     self.log.error("Error in spawner send: %s", e)
 
-                self.next_spawn_times[guild_id] = now + random.randint(120, 240)
+                self._schedule_next_spawn(guild_id)
             except Exception as e:
                 self.log.error("Error in spawner: %s", e)
 
@@ -131,6 +135,9 @@ class CoreCog(commands.Cog):
     async def before_bird_spawner(self):
         await self.bot.wait_until_ready()
         await asyncio.sleep(5)
+        for guild_id in list(self.bot.server_settings.keys()):
+            self._schedule_next_spawn(guild_id)
+        self.log.info("spawner startup: scheduled next spawns (deploy back-to-back guard)")
 
     async def force_spawn(self, guild_id, source=None):
         guild_id = str(guild_id)
@@ -269,6 +276,7 @@ class CoreCog(commands.Cog):
         if powerups_cog and powerups_cog.consume_miss(guild_id_int, user_id_int):
             state["active"] = False
             state["name"] = None
+            self._schedule_next_spawn(guild_id)
             await message.reply("💨 **The bird got spooked and flew away!** *(Distraction)*")
             return
 
@@ -292,6 +300,7 @@ class CoreCog(commands.Cog):
             except asyncio.TimeoutError:
                 state["active"] = False
                 state["name"] = None
+                self._schedule_next_spawn(guild_id)
                 await message.channel.send("⏰ Time's up! The **Duolingo Bird** flew away!")
                 return
 
@@ -303,6 +312,7 @@ class CoreCog(commands.Cog):
             if user_answer is None or user_answer != answer:
                 state["active"] = False
                 state["name"] = None
+                self._schedule_next_spawn(guild_id)
                 await reply_msg.reply(f"❌ Wrong! The answer was **{answer}**. The **Duolingo Bird** flew away!")
                 return
 
@@ -313,6 +323,7 @@ class CoreCog(commands.Cog):
 
         state["active"] = False
         state["name"] = None
+        self._schedule_next_spawn(guild_id)
 
         xp_mult = 1.0
         double_chance = 0.0
