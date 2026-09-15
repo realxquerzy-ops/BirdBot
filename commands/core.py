@@ -73,35 +73,29 @@ class CoreCog(commands.Cog):
         for guild_id, channel_id in list(self.bot.server_settings.items()):
             try:
                 guild = self.bot.get_guild(int(guild_id))
-                self.log.info("guild=%s name=%s members=%s min=%s", guild.id if guild else guild_id, guild.name if guild else "?", guild.member_count if guild else "None", self.bot.min_guild_members)
                 if guild is None:
                     continue
                 if guild.member_count is not None and guild.member_count < self.bot.min_guild_members:
-                    self.log.info("SKIP %s: %s < %s", guild.name, guild.member_count, self.bot.min_guild_members)
+                    self.log.info("SKIP %s: %s members < min %s", guild.name, guild.member_count, self.bot.min_guild_members)
                     continue
 
                 state = self.bot.spawn_states.get(guild_id)
                 if state is None:
                     state = self._new_spawn_state()
                     self.bot.spawn_states[guild_id] = state
-                self.log.info("state for %s: active=%s name=%s", guild.name, state.get("active"), state.get("name"))
 
                 if state["active"]:
-                    self.log.info("CONTINUE active for %s", guild.name)
                     continue
 
                 if self.next_spawn_times.get(guild_id, 0) > now:
-                    self.log.info("CONTINUE cooldown for %s until %.0f", guild.name, self.next_spawn_times.get(guild_id, 0))
                     continue
 
                 channel = self.bot.get_channel(int(channel_id))
-                self.log.info("channel=%s", channel if channel else f"missing id={channel_id}")
                 if not channel:
                     try:
                         channel = await self.bot.fetch_channel(int(channel_id))
-                        self.log.info("fetched channel=%s", channel)
                     except Exception as e:
-                        self.log.error("fetch_channel fail: %s", e)
+                        self.log.error("fetch_channel fail for %s: %s", guild.name, e)
                         continue
 
                 bird = random.choices(self.bot.birds, weights=self.spawn_weights_for(guild_id), k=1)[0]
