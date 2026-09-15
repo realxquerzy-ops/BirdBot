@@ -84,21 +84,28 @@ class CoreCog(commands.Cog):
                 if state is None:
                     state = self._new_spawn_state()
                     self.bot.spawn_states[guild_id] = state
+                self.log.info("state for %s: active=%s name=%s", guild.name, state.get("active"), state.get("name"))
 
                 if state["active"]:
+                    self.log.info("CONTINUE active for %s", guild.name)
                     continue
 
                 if self.next_spawn_times.get(guild_id, 0) > now:
+                    self.log.info("CONTINUE cooldown for %s until %.0f", guild.name, self.next_spawn_times.get(guild_id, 0))
                     continue
 
                 channel = self.bot.get_channel(int(channel_id))
+                self.log.info("channel=%s", channel if channel else f"missing id={channel_id}")
                 if not channel:
                     try:
                         channel = await self.bot.fetch_channel(int(channel_id))
-                    except Exception:
+                        self.log.info("fetched channel=%s", channel)
+                    except Exception as e:
+                        self.log.error("fetch_channel fail: %s", e)
                         continue
 
                 bird = random.choices(self.bot.birds, weights=self.spawn_weights_for(guild_id), k=1)[0]
+                self.log.info("SPAWN %s in %s", bird["name"], guild.name)
 
                 state["active"] = True
                 state["spawn_time"] = now
