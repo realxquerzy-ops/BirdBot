@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import random
 import time
 
@@ -35,6 +36,7 @@ def generate_math_question():
 
 class CoreCog(commands.Cog):
     MISSPELLS = {"burd", "berd", "bord", "birdd", "birt", "beard", "b1rd", "gbird", "birb"}
+    log = logging.getLogger("birdbot.spawner")
 
     def __init__(self, bot):
         self.bot = bot
@@ -71,11 +73,11 @@ class CoreCog(commands.Cog):
         for guild_id, channel_id in list(self.bot.server_settings.items()):
             try:
                 guild = self.bot.get_guild(int(guild_id))
-                print(f"[spawner] guild={guild.id if guild else guild_id} name={guild.name if guild else '?'} members={guild.member_count if guild else 'None'} min={self.bot.min_guild_members}")
+                self.log.info("guild=%s name=%s members=%s min=%s", guild.id if guild else guild_id, guild.name if guild else "?", guild.member_count if guild else "None", self.bot.min_guild_members)
                 if guild is None:
                     continue
                 if guild.member_count is not None and guild.member_count < self.bot.min_guild_members:
-                    print(f"[spawner] SKIP {guild.name}: {guild.member_count} < {self.bot.min_guild_members}")
+                    self.log.info("SKIP %s: %s < %s", guild.name, guild.member_count, self.bot.min_guild_members)
                     continue
 
                 state = self.bot.spawn_states.get(guild_id)
@@ -118,11 +120,11 @@ class CoreCog(commands.Cog):
                 except Exception as e:
                     state["active"] = False
                     state["name"] = None
-                    print(f"Error in spawner: {e}")
+                    self.log.error("Error in spawner send: %s", e)
 
                 self.next_spawn_times[guild_id] = now + random.randint(120, 240)
             except Exception as e:
-                print(f"Error in spawner: {e}")
+                self.log.error("Error in spawner: %s", e)
 
     @bird_spawner.before_loop
     async def before_bird_spawner(self):
