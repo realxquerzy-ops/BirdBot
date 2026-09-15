@@ -1,5 +1,7 @@
+import logging
 import os
 import random
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -8,6 +10,13 @@ import discord
 from discord.ext import commands
 
 from db import Database
+
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stderr,
+    force=True,
+    format="[%(asctime)s] [%(levelname)-8s] %(name)s: %(message)s",
+)
 
 # --- VERİTABANI BAĞLANTISI (PostgreSQL - Railway) ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -189,35 +198,35 @@ async def on_presence_update(before, after):
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user} olarak giriş yapıldı ve PostgreSQL aktif!")
-    print(f"[debug] intents: presences={bot.intents.presences} members={bot.intents.members} message_content={bot.intents.message_content}")
+    logging.info("%s olarak giriş yapıldı ve PostgreSQL aktif!", bot.user)
+    logging.info("[debug] intents: presences=%s members=%s message_content=%s", bot.intents.presences, bot.intents.members, bot.intents.message_content)
 
     for guild in bot.guilds:
-        print(f"[debug] guild={guild.name!r} members=<{len(guild.members)}>")
+        logging.info("[debug] guild=%r members=<%s>", guild.name, len(guild.members))
     
     # Initialize presence cache with current member statuses
     count = 0
     for member in bot.get_all_members():
         bot.presence_cache[member.id] = member.status
         count += 1
-    print(f"[debug] presence_cache initialized with {count} members")
+    logging.info("[debug] presence_cache initialized with %s members", count)
     
     for member in bot.get_all_members():
         if member.id in bot.whitelisted_users:
-            print(f"[debug] owner {member} status={member.status}")
+            logging.info("[debug] owner %s status=%s", member, member.status)
 
     if os.path.exists("./commands"):
         for filename in os.listdir("./commands"):
             if filename.endswith(".py") and filename != "__init__.py":
                 cog_name = f"commands.{filename[:-3]}"
                 await bot.load_extension(cog_name)
-                print(f"Modül yüklendi: {cog_name}")
+                logging.info("Modül yüklendi: %s", cog_name)
 
     try:
         synced = await bot.tree.sync()
-        print(f"{len(synced)} global komut senkronize edildi.")
+        logging.info("%s global komut senkronize edildi.", len(synced))
     except Exception as e:
-        print(f"Senkronizasyon hatası: {e}")
+        logging.error("Senkronizasyon hatası: %s", e)
 
     # BirdBot'a tüm başarımları kilitle (leaderboard'larda görünmez, envanter gibi)
     games_cog = bot.get_cog("GamesCog")
@@ -225,7 +234,7 @@ async def on_ready():
         all_ach = list(games_cog.ACHIEVEMENTS_LIST.keys())
         for guild in bot.guilds:
             bot.db.save_achievements(guild.id, bot.user.id, all_ach)
-        print(f"[achievements] BirdBot'a {len(all_ach)} başarım eklendi ({len(bot.guilds)} sunucu).")
+        logging.info("[achievements] BirdBot'a %s başarım eklendi (%s sunucu).", len(all_ach), len(bot.guilds))
 
 bot.birds = BIRDS
 bot.bird_values = BIRD_VALUES
