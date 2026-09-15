@@ -70,6 +70,12 @@ class CoreCog(commands.Cog):
 
         for guild_id, channel_id in list(self.bot.server_settings.items()):
             try:
+                guild = self.bot.get_guild(int(guild_id))
+                if guild is None:
+                    continue
+                if guild.member_count is not None and guild.member_count < self.bot.min_guild_members:
+                    continue
+
                 state = self.bot.spawn_states.get(guild_id)
                 if state is None:
                     state = self._new_spawn_state()
@@ -124,6 +130,12 @@ class CoreCog(commands.Cog):
     async def force_spawn(self, guild_id, source=None):
         guild_id = str(guild_id)
         try:
+            guild = self.bot.get_guild(int(guild_id))
+            if guild is None:
+                return False
+            if guild.member_count is not None and guild.member_count < self.bot.min_guild_members:
+                return False
+
             state = self.bot.spawn_states.get(guild_id)
             if state is None:
                 state = self._new_spawn_state()

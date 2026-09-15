@@ -546,6 +546,16 @@ class SocialCog(commands.Cog):
             await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
             return
 
+        if (
+            interaction.guild.member_count is not None
+            and interaction.guild.member_count < self.bot.min_guild_members
+        ):
+            await interaction.followup.send(
+                f"❌ This bot only spawns birds in servers with at least **{self.bot.min_guild_members} members** to prevent farming.",
+                ephemeral=True
+            )
+            return
+
         guild_id = interaction.guild.id
         self.bot.db.set_server_channel(guild_id, channel.id)
         self.bot.server_settings[str(guild_id)] = channel.id

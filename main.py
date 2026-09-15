@@ -154,6 +154,7 @@ BIRD_VALUES = {bird["name"]: bird["value"] for bird in BIRDS}
 BIRD_VALUES_LOWER = {bird["name"].lower(): bird["value"] for bird in BIRDS}
 
 WHITELISTED_USERS = [1469734369739538677]
+MIN_GUILD_MEMBERS = 10
 RESOURCE_GUILD_IDS = [
     1511406716749611171,
     1539963070045093958,
@@ -230,6 +231,7 @@ bot.birds = BIRDS
 bot.bird_values = BIRD_VALUES
 bot.bird_values_lower = BIRD_VALUES_LOWER
 bot.whitelisted_users = WHITELISTED_USERS
+bot.min_guild_members = MIN_GUILD_MEMBERS
 bot.resource_guild_ids = RESOURCE_GUILD_IDS
 bot.spawn_states = {}
 bot.server_settings = db.get_server_settings()
