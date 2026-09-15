@@ -71,9 +71,11 @@ class CoreCog(commands.Cog):
         for guild_id, channel_id in list(self.bot.server_settings.items()):
             try:
                 guild = self.bot.get_guild(int(guild_id))
+                print(f"[spawner] guild={guild.id if guild else guild_id} name={guild.name if guild else '?'} members={guild.member_count if guild else 'None'} min={self.bot.min_guild_members}")
                 if guild is None:
                     continue
                 if guild.member_count is not None and guild.member_count < self.bot.min_guild_members:
+                    print(f"[spawner] SKIP {guild.name}: {guild.member_count} < {self.bot.min_guild_members}")
                     continue
 
                 state = self.bot.spawn_states.get(guild_id)
