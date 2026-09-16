@@ -53,8 +53,7 @@ class CagePutSelect(discord.ui.Select):
         cage["birds"].append(name)
         view.bot.db.save_birdcage(view.guild_id, view.user.id, cage["birds"], cage["level"], cage["accumulated"])
 
-        await interaction.response.edit_message(embed=view.build_embed())
-        await interaction.followup.send(f"🐦 **{name}** kafese eklendi!", ephemeral=True)
+        await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
 
 class CageView(discord.ui.View):
@@ -114,7 +113,7 @@ class CageView(discord.ui.View):
             return
         put_view = PutBirdView(self.bot, self.guild_id, self.user_id, self)
         put_view._msg = self._msg
-        await interaction.response.edit_message(view=put_view)
+        await interaction.response.edit_message(embed=self.build_embed(), view=put_view)
 
     @discord.ui.button(label="Cash Out", style=discord.ButtonStyle.blurple, row=1)
     async def cash_out(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -172,19 +171,14 @@ class CageView(discord.ui.View):
         new_level = cage["level"] + 1
         self.bot.db.save_birdcage(self.guild_id, self.user_id, cage["birds"], new_level, cage["accumulated"])
 
-        new_cap = CAGE_CAPACITY.get(new_level, 16)
-        embed = discord.Embed(
-            title="⬆️ Cage Upgraded!",
-            description=f"Level **{new_level}** — **{new_cap}** slots!",
-            color=discord.Color.purple(),
-        )
         await interaction.response.edit_message(embed=self.build_embed())
 
     async def on_timeout(self):
-        try:
-            await self._msg.edit(view=None)
-        except Exception:
-            pass
+        if self._msg:
+            try:
+                await self._msg.edit(view=None)
+            except Exception:
+                pass
 
 
 class PutBirdView(discord.ui.View):
@@ -204,10 +198,11 @@ class PutBirdView(discord.ui.View):
         await interaction.response.edit_message(embed=self.parent_view.build_embed(), view=self.parent_view)
 
     async def on_timeout(self):
-        try:
-            await self._msg.edit(view=None)
-        except Exception:
-            pass
+        if self._msg:
+            try:
+                await self._msg.edit(view=None)
+            except Exception:
+                pass
 
 
 class BirdCageCog(commands.Cog):
@@ -247,8 +242,9 @@ class BirdCageCog(commands.Cog):
             await interaction.response.send_message("❌ Server only!", ephemeral=True)
             return
 
+        await interaction.response.defer()
         view = CageView(self.bot, interaction.guild.id, interaction.user.id)
-        msg = await interaction.response.send_message(embed=view.build_embed(), view=view)
+        msg = await interaction.followup.send(embed=view.build_embed(), view=view)
         view._msg = msg
 
 
