@@ -403,6 +403,7 @@ class CoreCog(commands.Cog):
                 "</daily:0> - Claim your daily reward\n"
                 "</sell:0> - Sell birds for BirdCoin\n"
                 "</shop:0> - Buy powerups with BirdCoin\n"
+                "</birdcage:0> - Put birds in your cage to earn passive BirdCoin\n"
                 "</balance:0> - View your BirdCoin balance"
             ),
             color=discord.Color.blue()

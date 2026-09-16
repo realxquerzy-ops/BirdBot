@@ -379,3 +379,30 @@ class Database:
         if row and row[0] > 0:
             return {"total": row[0], "wins": row[1], "rate": row[1] / row[0] * 100}
         return {"total": 0, "wins": 0, "rate": 0}
+
+    def get_birdcage(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT birds, level, accumulated FROM birdcage WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
+        if row:
+            return {"birds": self._loads_json(row[0]), "level": int(row[1]), "accumulated": float(row[2])}
+        return {"birds": [], "level": 1, "accumulated": 0.0}
+
+    def save_birdcage(self, guild_id, user_id, birds, level, accumulated):
+        self.execute(
+            """
+            INSERT INTO birdcage (guild_id, user_id, birds, level, accumulated) VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = EXCLUDED.birds, level = EXCLUDED.level, accumulated = EXCLUDED.accumulated
+            """,
+            (guild_id, user_id, json.dumps(birds), int(level), float(accumulated)),
+        )
+
+    def get_all_birdcages(self):
+        rows = self.fetchall(
+            "SELECT guild_id, user_id, birds, level, accumulated FROM birdcage WHERE birds != '[]'"
+        )
+        return [
+            {"guild_id": int(r[0]), "user_id": int(r[1]), "birds": self._loads_json(r[2]), "level": int(r[3]), "accumulated": float(r[4])}
+            for r in rows
+        ]

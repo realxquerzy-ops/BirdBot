@@ -96,6 +96,15 @@ db.execute('''CREATE TABLE IF NOT EXISTS guild_boosts (
     boosts INTEGER DEFAULT 0
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS birdcage (
+    guild_id BIGINT,
+    user_id BIGINT,
+    birds TEXT DEFAULT '[]',
+    level INTEGER DEFAULT 1,
+    accumulated REAL DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id)
+)''')
+
 db.execute('''CREATE TABLE IF NOT EXISTS autodefend (
     guild_id BIGINT,
     user_id BIGINT,
