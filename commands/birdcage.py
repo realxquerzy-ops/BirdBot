@@ -53,7 +53,7 @@ class CagePutSelect(discord.ui.Select):
         cage["birds"].append(name)
         view.bot.db.save_birdcage(view.guild_id, view.user.id, cage["birds"], cage["level"], cage["accumulated"])
 
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        await interaction.response.edit_message(embed=view.parent_view.build_embed(), view=view)
 
 
 class CageView(discord.ui.View):
