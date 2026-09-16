@@ -304,7 +304,7 @@ async def _self_ping_loop():
     while True:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{url.rstrip('/')}/health", timeout=_asyncio.timeout(15)) as resp:
+                async with session.get(f"{url.rstrip('/')}/health", timeout=aiohttp.ClientTimeout(total=15)) as resp:
                     logging.info("[keepalive] ping %s -> %s", url, resp.status)
         except Exception as e:
             logging.warning("[keepalive] ping failed: %s", e)
