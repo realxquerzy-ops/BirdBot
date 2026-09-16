@@ -1,9 +1,9 @@
-import asyncio
+import logging
 
 from collections import Counter
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 CAGE_CAPACITY = {1: 3, 2: 5, 3: 8, 4: 12, 5: 16}
 UPGRADE_COST = {1: 50, 2: 150, 3: 400, 4: 1000}
@@ -215,31 +215,34 @@ class PutBirdView(discord.ui.View):
 class BirdCageCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.log = logging.getLogger("birdbot.birdcage")
+        self.birdcage_income.start()
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        self.bot.loop.create_task(self._income_loop())
+    def cog_unload(self):
+        self.birdcage_income.cancel()
 
-    async def _income_loop(self):
-        while True:
-            try:
-                await self._tick()
-            except Exception:
-                pass
-            await asyncio.sleep(60)
-
-    async def _tick(self):
+    @tasks.loop(seconds=60.0)
+    async def birdcage_income(self):
         cages = self.bot.db.get_all_birdcages()
+        if not cages:
+            return
         for cage in cages:
-            if not cage["birds"]:
-                continue
-            total_value = sum(self.bot.bird_values.get(name, 1) for name in cage["birds"])
-            income_per_min = total_value / 30.0
-            cage["accumulated"] += income_per_min
-            self.bot.db.save_birdcage(
-                cage["guild_id"], cage["user_id"],
-                cage["birds"], cage["level"], cage["accumulated"],
-            )
+            try:
+                if not cage["birds"]:
+                    continue
+                total_value = sum(self.bot.bird_values.get(name, 1) for name in cage["birds"])
+                income_per_min = total_value / 30.0
+                cage["accumulated"] += income_per_min
+                self.bot.db.save_birdcage(
+                    cage["guild_id"], cage["user_id"],
+                    cage["birds"], cage["level"], cage["accumulated"],
+                )
+            except Exception as e:
+                self.log.error("income tick fail for %s/%s: %s", cage["guild_id"], cage["user_id"], e)
+
+    @birdcage_income.before_loop
+    async def before_birdcage_income(self):
+        await self.bot.wait_until_ready()
 
     @discord.app_commands.command(name="birdcage", description="View and manage your bird cage")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
