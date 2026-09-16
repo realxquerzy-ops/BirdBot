@@ -235,6 +235,8 @@ async def on_ready():
             bot.db.save_achievements(guild.id, bot.user.id, all_ach)
         logging.info("[achievements] BirdBot'a %s başarım eklendi (%s sunucu).", len(all_ach), len(bot.guilds))
 
+    bot.loop.create_task(_self_ping_loop())
+
 bot.birds = BIRDS
 bot.bird_values = BIRD_VALUES
 bot.bird_values_lower = BIRD_VALUES_LOWER
@@ -283,7 +285,30 @@ def _start_health_server():
     server = ThreadingHTTPServer(("0.0.0.0", port), _HealthHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    print(f"[health] Listening on :{port}")
+    logging.info("[health] Listening on :%s", port)
+
+
+def _get_public_url():
+    return os.getenv("RENDER_EXTERNAL_URL") or os.getenv("PUBLIC_URL")
+
+
+async def _self_ping_loop():
+    """Render free, 15dk inbound istek yoksa servisi uyutur (spin-down).
+    Kendi public URL'sine periyodik istek atarak bunu engelliyoruz."""
+    url = _get_public_url()
+    if not url:
+        logging.warning("[keepalive] PUBLIC_URL/RENDER_EXTERNAL_URL yok, self-ping devre dışı")
+        return
+    import aiohttp
+    import asyncio as _asyncio
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{url.rstrip('/')}/health", timeout=_asyncio.timeout(15)) as resp:
+                    logging.info("[keepalive] ping %s -> %s", url, resp.status)
+        except Exception as e:
+            logging.warning("[keepalive] ping failed: %s", e)
+        await _asyncio.sleep(300)
 
 
 _start_health_server()
