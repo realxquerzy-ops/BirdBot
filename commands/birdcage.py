@@ -188,7 +188,14 @@ class PutBirdView(discord.ui.View):
         self.guild_id = guild_id
         self.user_id = user_id
         self.parent_view = parent_view
+        self._user = None
         self.add_item(CagePutSelect(self))
+
+    @property
+    def user(self):
+        if self._user is None:
+            self._user = self.bot.get_user(self.user_id)
+        return self._user
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.grey, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
