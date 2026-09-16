@@ -131,6 +131,7 @@ db.execute("CREATE INDEX IF NOT EXISTS idx_pip_claims_guild ON pip_claims (guild
 default_birds = [
     ("Bird", 1539912459333140591, 30.0, 1),
     ("Good Bird", 1539732798217261186, 22.0, 2),
+    ("Pie Bird", 1549799506378367109, 14.7, 3.14),
     ("Fat Bird", 1539941434004738128, 13.0, 3.6),
     ("Chick", 1540105760409788477, 9.0, 5.4),
     ("Yellow Bird", 1540087019357736960, 7.0, 6.3),
@@ -146,6 +147,7 @@ default_birds = [
     ("Duolingo Bird", 1548026648258158593, 0.3, 30.0),
     ("Bird 618", 1540321587780124693, 0.2, 35.0),
     ("Radioactive Bird", 1540372078660952175, 0.1, 50),
+    ("Emerald Bird", 1549798737189015794, 0.07, 60),
     ("Caseoh Bird", 1548030264167505920, 0.05, 75)
 ]
 
