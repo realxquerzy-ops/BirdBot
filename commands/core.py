@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import random
 import time
@@ -58,15 +59,27 @@ class CoreCog(commands.Cog):
         """Cooldown catch anından itibaren başlasın — hızlı kullanıcılar için anında respawn engeli."""
         self.next_spawn_times[guild_id] = time.time() + random.randint(120, 240)
 
+    WEEKEND_RARITY_EXP = 0.85
+
+    def _is_weekend(self):
+        return datetime.datetime.now().weekday() >= 5
+
     def spawn_weights_for(self, guild_id):
         boost = 0
         try:
             boost = self.bot.db.get_guild_boost(int(guild_id))
         except Exception:
             pass
-        if boost <= 0:
+
+        exp = 1.0
+        if boost > 0:
+            exp = max(0.30, 1.0 - 0.035 * boost)
+
+        if self._is_weekend():
+            exp *= self.WEEKEND_RARITY_EXP
+
+        if exp >= 1.0:
             return self.spawn_weights
-        exp = max(0.30, 1.0 - 0.035 * boost)
         return [float(bird["weight"]) ** exp for bird in self.bot.birds]
 
     @tasks.loop(seconds=30.0)
