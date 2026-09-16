@@ -79,10 +79,6 @@ class CoreCog(commands.Cog):
                 guild = self.bot.get_guild(int(guild_id))
                 if guild is None:
                     continue
-                if guild.member_count is not None and guild.member_count < self.bot.min_guild_members:
-                    self.log.info("SKIP %s: %s members < min %s", guild.name, guild.member_count, self.bot.min_guild_members)
-                    continue
-
                 state = self.bot.spawn_states.get(guild_id)
                 if state is None:
                     state = self._new_spawn_state()
@@ -144,8 +140,6 @@ class CoreCog(commands.Cog):
         try:
             guild = self.bot.get_guild(int(guild_id))
             if guild is None:
-                return False
-            if guild.member_count is not None and guild.member_count < self.bot.min_guild_members:
                 return False
 
             state = self.bot.spawn_states.get(guild_id)
