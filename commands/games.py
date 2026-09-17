@@ -55,7 +55,6 @@ class GamesCog(commands.Cog):
         self.rarest_bird = min(valid_birds, key=lambda x: float(x["weight"])) if valid_birds else None
         self.catch_streaks = {}
         self.gamble_losses = {}
-        self.last_gamble = {}
 
     ACHIEVEMENTS_LIST = {
         "it_begins": {"name": "It begins...", "desc": "Catch your first bird", "hidden": False},
@@ -540,8 +539,14 @@ class GamesCog(commands.Cog):
     async def gamble(self, interaction: discord.Interaction, bird_name: str, amount: str):
         await interaction.response.defer(ephemeral=False)
         try:
+            if not interaction.guild:
+                await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+                return
+
+            guild_id = interaction.guild.id
+            user_id = interaction.user.id
             now = int(time.time())
-            last = self.last_gamble.get(interaction.user.id, 0)
+            last = self.bot.db.get_last_gamble(guild_id, user_id)
             remaining = 300 - (now - last)
             if remaining > 0:
                 await interaction.followup.send(
@@ -550,10 +555,7 @@ class GamesCog(commands.Cog):
                     ephemeral=True
                 )
                 return
-            self.last_gamble[interaction.user.id] = now
-            if not interaction.guild:
-                await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
-                return
+            self.bot.db.set_last_gamble(guild_id, user_id, now)
 
             matched_bird_name = None
             for bird in self.bot.birds:
@@ -564,9 +566,6 @@ class GamesCog(commands.Cog):
             if not matched_bird_name:
                 await interaction.followup.send(f"❌ Bird '{bird_name}' not found!", ephemeral=True)
                 return
-
-            guild_id = interaction.guild.id
-            user_id = interaction.user.id
 
             user_birds = self.bot.db.get_inventory(guild_id, user_id)
             current_count = user_birds.count(matched_bird_name)

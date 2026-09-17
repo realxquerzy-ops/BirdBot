@@ -168,6 +168,22 @@ class Database:
             (guild_id, user_id, xp, claimed_level),
         )
 
+    def get_last_gamble(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT last_gamble FROM gamble_cooldowns WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
+        return int(row[0]) if row and row[0] is not None else 0
+
+    def set_last_gamble(self, guild_id, user_id, ts):
+        self.execute(
+            """
+            INSERT INTO gamble_cooldowns (guild_id, user_id, last_gamble) VALUES (%s, %s, %s)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET last_gamble = EXCLUDED.last_gamble
+            """,
+            (guild_id, user_id, int(ts)),
+        )
+
     def get_last_daily_claim(self, guild_id, user_id):
         row = self.fetchone(
             "SELECT last_claim FROM daily_claims WHERE guild_id = %s AND user_id = %s",

@@ -76,6 +76,13 @@ db.execute('''CREATE TABLE IF NOT EXISTS daily_claims (
     PRIMARY KEY (guild_id, user_id)
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS gamble_cooldowns (
+    guild_id BIGINT,
+    user_id BIGINT,
+    last_gamble BIGINT DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id)
+)''')
+
 db.execute('''CREATE TABLE IF NOT EXISTS powerups (
     guild_id BIGINT,
     user_id BIGINT,
