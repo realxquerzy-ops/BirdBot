@@ -10,6 +10,79 @@ UPGRADE_COST = {1: 50, 2: 150, 3: 400, 4: 1000}
 MAX_LEVEL = 5
 
 
+class PutAmountModal(discord.ui.Modal, title="Put birds in cage"):
+    def __init__(self, view, bird_name, max_put):
+        super().__init__()
+        self.put_view = view
+        self.bird_name = bird_name
+        self.max_put = max_put
+        self.amount = discord.ui.TextInput(
+            label="Quantity",
+            placeholder=f"{bird_name} — 1 to {max_put}",
+            default=str(max_put),
+            required=True,
+            max_length=3,
+        )
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        view = self.put_view
+        if interaction.user.id != view.user_id:
+            await interaction.response.send_message("❌ Not your cage!", ephemeral=True)
+            return
+        try:
+            requested = int(str(self.amount.value).strip())
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid number.", ephemeral=True)
+            return
+        if requested <= 0:
+            await interaction.response.send_message("❌ Quantity must be at least 1.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        cage = view.bot.db.get_birdcage(view.guild_id, view.user_id)
+        cap = CAGE_CAPACITY.get(cage["level"], 3)
+        free = cap - len(cage["birds"])
+        if free <= 0:
+            await interaction.followup.send(
+                f"❌ Cage is full! ({cap} slots). Upgrade with `/birdcage`.",
+                ephemeral=True,
+            )
+            return
+
+        inv = view.bot.db.get_inventory(view.guild_id, view.user_id)
+        owned = inv.count(self.bird_name)
+        if owned <= 0:
+            await interaction.followup.send("❌ You no longer have that bird!", ephemeral=True)
+            return
+
+        placed = min(requested, owned, free)
+        for _ in range(placed):
+            inv.remove(self.bird_name)
+        view.bot.db.save_inventory(view.guild_id, view.user_id, inv)
+
+        cage["birds"].extend([self.bird_name] * placed)
+        view.bot.db.save_birdcage(
+            view.guild_id, view.user_id,
+            cage["birds"], cage["level"], cage["accumulated"],
+        )
+
+        try:
+            new_put = PutBirdView(view.bot, view.guild_id, view.user_id, view.parent_view)
+            new_put._msg = view._msg
+            if view._msg:
+                await view._msg.edit(embed=view.parent_view.build_embed(), view=new_put)
+        except Exception:
+            pass
+
+        note = f" (only {placed} fit)" if placed < requested else ""
+        await interaction.followup.send(
+            f"✅ Put **{placed}× {self.bird_name}** into the cage.{note}",
+            ephemeral=True,
+        )
+
+
 class CagePutSelect(discord.ui.Select):
     def __init__(self, view):
         inv = view.bot.db.get_inventory(view.guild_id, view.user.id)
@@ -27,33 +100,32 @@ class CagePutSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
+        if interaction.user.id != view.user_id:
+            await interaction.response.send_message("❌ Not your cage!", ephemeral=True)
+            return
         if self.values[0] == "__none__":
             await interaction.response.send_message("❌ You have no birds!", ephemeral=True)
             return
 
         name = self.values[0]
-        cage = view.bot.db.get_birdcage(view.guild_id, view.user.id)
+        cage = view.bot.db.get_birdcage(view.guild_id, view.user_id)
         cap = CAGE_CAPACITY.get(cage["level"], 3)
-
-        if len(cage["birds"]) >= cap:
+        free = cap - len(cage["birds"])
+        if free <= 0:
             await interaction.response.send_message(
                 f"❌ Cage is full! ({cap} slots). Upgrade with `/birdcage`.",
                 ephemeral=True,
             )
             return
 
-        inv = view.bot.db.get_inventory(view.guild_id, view.user.id)
-        if name not in inv:
+        inv = view.bot.db.get_inventory(view.guild_id, view.user_id)
+        owned = inv.count(name)
+        if owned <= 0:
             await interaction.response.send_message("❌ You no longer have that bird!", ephemeral=True)
             return
 
-        inv.remove(name)
-        view.bot.db.save_inventory(view.guild_id, view.user.id, inv)
-
-        cage["birds"].append(name)
-        view.bot.db.save_birdcage(view.guild_id, view.user.id, cage["birds"], cage["level"], cage["accumulated"])
-
-        await interaction.response.edit_message(embed=view.parent_view.build_embed(), view=view)
+        max_put = min(free, owned)
+        await interaction.response.send_modal(PutAmountModal(view, name, max_put))
 
 
 class CageView(discord.ui.View):
