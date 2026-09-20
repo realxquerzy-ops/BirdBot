@@ -672,6 +672,86 @@ class GamesCog(commands.Cog):
             print(f"Error in gamble command: {e}")
             await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
 
+    @discord.app_commands.command(name="gambleall", description="Gamble your ENTIRE inventory for a 50% chance to double everything — lose and it's all gone (Shield can't protect it)!")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def gambleall(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=False)
+        try:
+            if not interaction.guild:
+                await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+                return
+
+            guild_id = interaction.guild.id
+            user_id = interaction.user.id
+            now = int(time.time())
+            last = self.bot.db.get_last_gamble(guild_id, user_id)
+            remaining = 300 - (now - last)
+            if remaining > 0:
+                await interaction.followup.send(
+                    f"⏳ You can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s** "
+                    f"(once every 5 minutes).",
+                    ephemeral=True
+                )
+                return
+            self.bot.db.set_last_gamble(guild_id, user_id, now)
+
+            user_birds = self.bot.db.get_inventory(guild_id, user_id)
+            if not user_birds:
+                await self.unlock_achievement(user_id, "broke_gambler", interaction.channel, guild_id)
+                await interaction.followup.send("❌ Your inventory is empty!", ephemeral=True)
+                return
+
+            counts = Counter(user_birds)
+            total = len(user_birds)
+
+            await self.unlock_achievement(user_id, "lets_go_gambling", interaction.channel, guild_id)
+            if self.rarest_bird and counts.get(self.rarest_bird["name"], 0) > 0:
+                await self.unlock_achievement(user_id, "big_bet", interaction.channel, guild_id)
+
+            won = random.choice([True, False])
+
+            if won:
+                doubled = list(user_birds) + list(user_birds)
+                self.bot.db.save_inventory(guild_id, user_id, doubled)
+
+                await self.unlock_achievement(user_id, "oh_my_god", interaction.channel, guild_id)
+                self.check_stat_achievements(user_id, guild_id, interaction.channel)
+
+                summary = "\n".join(
+                    f"{name} ×{count} ➜ ×{count * 2}" for name, count in counts.most_common(30)
+                )
+                embed = discord.Embed(
+                    title="🎰 Gamble All — WIN!",
+                    description=(
+                        f"🎉 **{interaction.user.mention}** gambled their **entire inventory** and doubled it!\n"
+                        f"**{total}** birds ➜ **{total * 2}** birds\n\n{summary}"
+                    ),
+                    color=discord.Color.green()
+                )
+                await interaction.followup.send(embed=embed)
+            else:
+                self.bot.db.save_inventory(guild_id, user_id, [])
+
+                await self.unlock_achievement(user_id, "aww_dang_it", interaction.channel, guild_id)
+                await self.unlock_achievement(user_id, "its_over", interaction.channel, guild_id)
+
+                summary = "\n".join(
+                    f"{name} ×{count}" for name, count in counts.most_common(30)
+                )
+                embed = discord.Embed(
+                    title="🎰 Gamble All — LOST!",
+                    description=(
+                        f"💀 **{interaction.user.mention}** gambled their **entire inventory** and lost it all!\n"
+                        f"**{total}** birds vanished — the bet was too big for a Shield to protect.\n\n{summary}"
+                    ),
+                    color=discord.Color.red()
+                )
+                await interaction.followup.send(embed=embed)
+        except Exception as e:
+            print(f"Error in gambleall command: {e}")
+            await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
+
     @discord.app_commands.command(name="gift", description="Gift birds from your inventory to another user")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)

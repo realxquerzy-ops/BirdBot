@@ -97,9 +97,9 @@ class ShopCog(commands.Cog):
         "sab_half_xp": 30,
         "sab_steal": 40,
         "golden_gut": 20,
-        "bigger_net": 80,
+        "bigger_net": 150,
         "scarecrow": 35,
-        "bird_whistle": 60,
+        "bird_whistle": 140,
         "muzzle": 45,
     }
 

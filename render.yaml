@@ -1,0 +1,12 @@
+services:
+  - type: worker
+    name: birdbot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DISCORD_TOKEN
+        sync: false
+    plan: free

@@ -14,7 +14,7 @@ class PowerupsCog(commands.Cog):
         "sab_half_xp": {"name": "📉 Demotivate", "desc": "Halves a player's BirdPass XP for their next 3 catches", "type": "sabotage"},
         "sab_steal": {"name": "🕵️ Pocket", "desc": "50% chance to steal 1 bird from a player (rarer birds are harder to steal)", "type": "sabotage"},
         "golden_gut": {"name": "🪙 Golden Gut", "desc": "+50% BirdCoin from your next 3 sells", "type": "self"},
-        "bigger_net": {"name": "🔭 Bigger Net", "desc": "Guaranteed double bird for your next 5 catches", "type": "self"},
+        "bigger_net": {"name": "🔭 Double It", "desc": "Guaranteed double bird for your next catch", "type": "self"},
         "scarecrow": {"name": "🧹 Scarecrow", "desc": "Blocks the next sabotage aimed at you", "type": "self"},
         "bird_whistle": {"name": "🐦 Bird Whistle", "desc": "Instantly call a wild bird to spawn", "type": "self"},
         "muzzle": {"name": "🔇 Muzzle", "desc": "Silence a player for 10 seconds", "type": "sabotage"},
@@ -73,9 +73,8 @@ class PowerupsCog(commands.Cog):
         if entry.get("bigger_net", 0) > 0:
             double_chance = 1.0
             double_icon = "🔭"
-            entry["bigger_net"] -= 1
-            if entry.get("bigger_net", 0) <= 0:
-                entry.pop("bigger_net", None)
+            entry["bigger_net"] = 0
+            entry.pop("bigger_net", None)
         return xp_mult, double_chance, double_icon
 
     def consume_sell_boost(self, guild_id, user_id):
@@ -143,7 +142,7 @@ class PowerupsCog(commands.Cog):
         if entry.get("double_catch", 0) > 0:
             parts.append(f"🍀 Lucky Net: `{entry['double_catch']}` catches left")
         if entry.get("bigger_net", 0) > 0:
-            parts.append(f"🔭 Bigger Net: `{entry['bigger_net']}` catches left")
+            parts.append(f"🔭 Double It: ready")
         if entry.get("golden_gut", 0) > 0:
             parts.append(f"🪙 Golden Gut: `{entry['golden_gut']}` sells left")
         if entry.get("scarecrow", 0) > 0:
@@ -194,7 +193,7 @@ class PowerupsCog(commands.Cog):
         discord.app_commands.Choice(name="📉 Demotivate", value="sab_half_xp"),
         discord.app_commands.Choice(name="🕵️ Pocket", value="sab_steal"),
         discord.app_commands.Choice(name="🪙 Golden Gut", value="golden_gut"),
-        discord.app_commands.Choice(name="🔭 Bigger Net", value="bigger_net"),
+        discord.app_commands.Choice(name="🔭 Double It", value="bigger_net"),
         discord.app_commands.Choice(name="🧹 Scarecrow", value="scarecrow"),
         discord.app_commands.Choice(name="🐦 Bird Whistle", value="bird_whistle"),
         discord.app_commands.Choice(name="🔇 Muzzle", value="muzzle"),
@@ -300,8 +299,8 @@ class PowerupsCog(commands.Cog):
 
             elif powerup == "bigger_net":
                 entry = self._self_entry(guild_id, user_id)
-                entry["bigger_net"] = entry.get("bigger_net", 0) + 5
-                desc = f"🔭 **{interaction.user.mention}** activated Bigger Net! Guaranteed double birds for the next 5 catches."
+                entry["bigger_net"] = entry.get("bigger_net", 0) + 1
+                desc = f"🔭 **{interaction.user.mention}** activated Double It! Guaranteed double bird on their next catch."
 
             elif powerup == "scarecrow":
                 entry = self._self_entry(guild_id, user_id)

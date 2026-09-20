@@ -8,6 +8,7 @@ from discord.ext import commands, tasks
 CAGE_CAPACITY = {1: 3, 2: 5, 3: 8, 4: 12, 5: 16}
 UPGRADE_COST = {1: 50, 2: 150, 3: 400, 4: 1000}
 MAX_LEVEL = 5
+INCOME_CAP = {1: 100, 2: 250, 3: 500, 4: 1000, 5: 4000}
 
 
 class PutAmountModal(discord.ui.Modal, title="Put birds in cage"):
@@ -146,6 +147,7 @@ class CageView(discord.ui.View):
         cage = self.bot.db.get_birdcage(self.guild_id, self.user_id)
         cap = CAGE_CAPACITY.get(cage["level"], 3)
         slot_text = f"{len(cage['birds'])}/{cap}"
+        income_cap = INCOME_CAP.get(cage["level"], INCOME_CAP[MAX_LEVEL])
 
         if cage["birds"]:
             counts = Counter(cage["birds"])
@@ -170,7 +172,7 @@ class CageView(discord.ui.View):
             description=(
                 f"**Slots:** {slot_text}\n"
                 f"**Level:** {cage['level']}\n"
-                f"**Accumulated:** `{cage['accumulated']:.2f}` BirdCoin\n\n"
+                f"**Accumulated:** `{cage['accumulated']:.2f}` / `{income_cap}` BirdCoin\n\n"
                 f"**Caged Birds:**\n{bird_text}"
                 f"{upgrade_text}"
             ),
@@ -303,8 +305,11 @@ class BirdCageCog(commands.Cog):
                 if not cage["birds"]:
                     continue
                 total_value = sum(self.bot.bird_values.get(name, 1) for name in cage["birds"])
-                income_per_min = total_value / 30.0
-                cage["accumulated"] += income_per_min
+                income_per_min = total_value / 50.0
+                limit = INCOME_CAP.get(cage["level"], INCOME_CAP[MAX_LEVEL])
+                if cage["accumulated"] >= limit:
+                    continue
+                cage["accumulated"] = min(cage["accumulated"] + income_per_min, limit)
                 self.bot.db.save_birdcage(
                     cage["guild_id"], cage["user_id"],
                     cage["birds"], cage["level"], cage["accumulated"],
