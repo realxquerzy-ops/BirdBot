@@ -690,7 +690,7 @@ class GamesCog(commands.Cog):
             print(f"Error in gamble command: {e}")
             await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
 
-    @discord.app_commands.command(name="gambleall", description="Gamble your ENTIRE inventory for a 50% chance to double everything — lose and it's all gone (Shield can't protect it)!")
+    @discord.app_commands.command(name="gambleall", description="Gamble your ENTIRE inventory for a 50% chance to double it — lose it all!")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def gambleall(self, interaction: discord.Interaction):
