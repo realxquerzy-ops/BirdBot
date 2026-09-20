@@ -68,13 +68,32 @@ class BirdBotAnnounceCog(commands.Cog):
             try:
                 msg = await channel.fetch_message(msg_id)
                 await msg.edit(embed=embed)
+                if kind == "announce":
+                    await self._ensure_announce_reactions(channel, msg.id)
                 return msg
             except Exception:
                 pass
 
         msg = await channel.send(embed=embed)
         await self._set_tracked_msg(guild_id, kind, channel.id, msg.id)
+        if kind == "announce":
+            await self._ensure_announce_reactions(channel, msg.id)
         return msg
+
+    async def _ensure_announce_reactions(self, channel, msg_id):
+        try:
+            msg = await channel.fetch_message(msg_id)
+        except Exception:
+            return
+        for emoji in ("🐦", "🐦⬛"):
+            try:
+                await msg.add_reaction(emoji)
+            except Exception as e:
+                print(f"[announce] add_reaction {emoji} failed: {e}")
+        try:
+            await msg.clear_reaction("🖤")
+        except Exception:
+            pass
 
     def _announce_embed(self):
         return discord.Embed(
@@ -123,26 +142,6 @@ class BirdBotAnnounceCog(commands.Cog):
         await self._send_or_update(
             RESOURCE_GUILD_ID, "announce", ANNOUNCE_CHANNEL_ID, self._announce_embed()
         )
-
-        # Try to add reactions to the announce message if missing
-        try:
-            _, msg_id = await self._get_tracked_msg(RESOURCE_GUILD_ID, "announce")
-            if msg_id:
-                channel = self.bot.get_channel(ANNOUNCE_CHANNEL_ID)
-                if channel:
-                    msg = await channel.fetch_message(msg_id)
-                    for emoji in ("🐦", "🐦⬛"):
-                        try:
-                            await msg.add_reaction(emoji)
-                        except Exception:
-                            pass
-                    # clean up the old black_heart reaction if present
-                    try:
-                        await msg.clear_reaction("🖤")
-                    except Exception:
-                        pass
-        except Exception:
-            pass
 
         # Boost info (single embed, updated on boost/unboost)
         guild = self.bot.get_guild(RESOURCE_GUILD_ID)
