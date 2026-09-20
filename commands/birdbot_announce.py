@@ -131,11 +131,16 @@ class BirdBotAnnounceCog(commands.Cog):
                 channel = self.bot.get_channel(ANNOUNCE_CHANNEL_ID)
                 if channel:
                     msg = await channel.fetch_message(msg_id)
-                    for emoji in ("🐦", "🖤"):
+                    for emoji in ("🐦", "🐦⬛"):
                         try:
                             await msg.add_reaction(emoji)
                         except Exception:
                             pass
+                    # clean up the old black_heart reaction if present
+                    try:
+                        await msg.clear_reaction("🖤")
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -187,30 +192,15 @@ class BirdBotAnnounceCog(commands.Cog):
         if role is None or user.id == guild.me.id:
             return
 
-        channel = guild.get_channel(ANNOUNCE_CHANNEL_ID)
         if str(reaction.emoji) == "🐦":
             try:
                 await user.add_roles(role)
-                if channel:
-                    embed = discord.Embed(
-                        title="📢 Announcements Ping",
-                        description=f"<@!{user.id}> has been pings for announcements!",
-                        color=discord.Color.green(),
-                    )
-                    await channel.send(embed=embed, delete_after=5)
             except Exception as e:
                 print(f"Error adding announcements role: {e}")
 
-        elif str(reaction.emoji) == "🖤":
+        elif str(reaction.emoji) == "🐦⬛":
             try:
                 await user.add_roles(role)
-                if channel:
-                    embed = discord.Embed(
-                        title="🏆 Hall of Bird",
-                        description=f"<@!{user.id}> has entered the Hall of Bird!",
-                        color=discord.Color.gold(),
-                    )
-                    await channel.send(embed=embed, delete_after=5)
             except Exception as e:
                 print(f"Error adding Hall of Bird role: {e}")
 
