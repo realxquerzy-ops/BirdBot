@@ -85,7 +85,7 @@ class BirdBotAnnounceCog(commands.Cog):
             msg = await channel.fetch_message(msg_id)
         except Exception:
             return
-        for emoji in ("🐦", "🐦⬛"):
+        for emoji in ("🐦", "🐦‍⬛"):
             try:
                 await msg.add_reaction(emoji)
             except Exception as e:
@@ -197,7 +197,7 @@ class BirdBotAnnounceCog(commands.Cog):
             except Exception as e:
                 print(f"Error adding announcements role: {e}")
 
-        elif str(reaction.emoji) == "🐦⬛":
+        elif str(reaction.emoji) == "🐦‍⬛":
             try:
                 await user.add_roles(role)
             except Exception as e:
