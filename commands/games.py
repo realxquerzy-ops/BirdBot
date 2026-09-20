@@ -143,21 +143,35 @@ class GamesCog(commands.Cog):
         user_id_val = int(user_id)
         guild_id_db = int(guild_id) if guild_id else 0
 
-        user_achievements = self.bot.db.get_achievements(guild_id_db, user_id_val)
+        # DM/global unlocks (no guild) apply to every guild the user is in
+        if guild_id_db == 0:
+            target_guilds = [0] + [g.id for g in self.bot.guilds if g.get_member(user_id_val)]
+        else:
+            target_guilds = [guild_id_db]
 
-        if ach_id not in user_achievements:
+        unlocked_any = False
+        for gid in target_guilds:
+            user_achievements = self.bot.db.get_achievements(gid, user_id_val)
+            if ach_id in user_achievements:
+                continue
             user_achievements.append(ach_id)
-            self.bot.db.save_achievements(guild_id_db, user_id_val, user_achievements)
+            self.bot.db.save_achievements(gid, user_id_val, user_achievements)
+            unlocked_any = True
 
+            # Reward only granted when unlocking in a real guild (once per guild)
             reward = self.ACHIEVEMENT_REWARDS.get(ach_id, 0)
-            reward_txt = ""
-            if reward > 0 and guild_id_db > 0:
+            if reward > 0 and gid > 0:
                 try:
-                    self.bot.db.add_birdcoin(guild_id_db, user_id_val, reward)
-                    reward_txt = f"\n🪙 **+{reward:,} BirdCoin**"
+                    self.bot.db.add_birdcoin(gid, user_id_val, reward)
                 except Exception as e:
                     print(f"[achievement] reward error: {e}")
 
+        reward_txt = ""
+        reward = self.ACHIEVEMENT_REWARDS.get(ach_id, 0)
+        if reward > 0 and guild_id_db > 0:
+            reward_txt = f"\n🪙 **+{reward:,} BirdCoin**"
+
+        if unlocked_any:
             ach_info = self.ACHIEVEMENTS_LIST.get(ach_id)
             if ach_info and channel:
                 try:
@@ -235,6 +249,10 @@ class GamesCog(commands.Cog):
             user_achievements = list(self.ACHIEVEMENTS_LIST.keys())
         else:
             user_achievements = self.bot.db.get_achievements(guild_id, target.id)
+            if guild_id:
+                # merge global (DM) achievements so they show in every server
+                global_ach = self.bot.db.get_achievements(0, target.id)
+                user_achievements = list(set(user_achievements + global_ach))
 
         description = ""
         for ach_id, info in self.ACHIEVEMENTS_LIST.items():
