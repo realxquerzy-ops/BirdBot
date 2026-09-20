@@ -234,7 +234,7 @@ async def on_ready():
 
     if os.path.exists("./commands"):
         for filename in os.listdir("./commands"):
-            if filename.endswith(".py") and filename != "__init__.py" and filename != "birdbot_announce.py":
+            if filename.endswith(".py") and filename != "__init__.py":
                 cog_name = f"commands.{filename[:-3]}"
                 await bot.load_extension(cog_name)
                 logging.info("Modül yüklendi: %s", cog_name)
@@ -244,18 +244,6 @@ async def on_ready():
         logging.info("%s global komut senkronize edildi.", len(synced))
     except Exception as e:
         logging.error("Senkronizasyon hatası: %s", e)
-
-    await bot.load_extension("commands.birdbot_announce")
-    logging.info("Modül yüklendi: commands.birdbot_announce")
-
-    # Cog'un on_ready'i, bot zaten ready olduğu için dispatch ile çalışmayabilir;
-    # burada açıkça çağırıp embed'leri gönderiyoruz.
-    announce_cog = bot.get_cog("BirdBotAnnounceCog")
-    if announce_cog:
-        try:
-            await announce_cog.on_ready()
-        except Exception as e:
-            logging.error("BirdBotAnnounceCog.on_ready hatası: %s", e)
 
     # BirdBot'a tüm başarımları kilitle (leaderboard'larda görünmez, envanter gibi)
     games_cog = bot.get_cog("GamesCog")
