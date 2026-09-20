@@ -53,7 +53,7 @@ class CoreCog(commands.Cog):
         self.bird_spawner.cancel()
 
     def _new_spawn_state(self):
-        return {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
+        return {"active": False, "name": None, "spawn_time": None, "msg_obj": None, "pending_user": None}
 
     def _schedule_next_spawn(self, guild_id):
         """Cooldown catch anından itibaren başlasın — hızlı kullanıcılar için anında respawn engeli."""
@@ -302,28 +302,41 @@ class CoreCog(commands.Cog):
             def check(m):
                 return m.author == message.author and m.channel == message.channel and not m.author.bot
 
-            try:
-                reply_msg = await self.bot.wait_for("message", check=check, timeout=30.0)
-            except asyncio.TimeoutError:
+            correct_msg = None
+            deadline = time.time() + 30.0
+            while time.time() < deadline:
+                try:
+                    answer_msg = await self.bot.wait_for(
+                        "message", check=check, timeout=deadline - time.time()
+                    )
+                except asyncio.TimeoutError:
+                    answer_msg = None
+                    break
+                try:
+                    user_answer = int(answer_msg.content.strip())
+                except ValueError:
+                    continue
+                correct_msg = answer_msg
+                break
+
+            if correct_msg is None:
                 state["active"] = False
                 state["name"] = None
+                state["pending_user"] = None
                 self._schedule_next_spawn(guild_id)
                 await message.channel.send("⏰ Time's up! The **Duolingo Bird** flew away!")
                 return
 
-            try:
-                user_answer = int(reply_msg.content.strip())
-            except ValueError:
-                user_answer = None
-
-            if user_answer is None or user_answer != answer:
+            if user_answer != answer:
                 state["active"] = False
                 state["name"] = None
+                state["pending_user"] = None
                 self._schedule_next_spawn(guild_id)
-                await reply_msg.reply(f"❌ Wrong! The answer was **{answer}**. The **Duolingo Bird** flew away!")
+                await correct_msg.reply(f"❌ Wrong! The answer was **{answer}**. The **Duolingo Bird** flew away!")
                 return
 
-            await reply_msg.reply("✅ Correct! The **Duolingo Bird** is caught!")
+            state["pending_user"] = None
+            await correct_msg.reply("✅ Correct! The **Duolingo Bird** is caught!")
 
         if user_id not in self.bot.fastest_times or catch_duration < self.bot.fastest_times[user_id]:
             self.bot.fastest_times[user_id] = catch_duration
