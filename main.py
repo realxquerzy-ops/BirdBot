@@ -248,6 +248,15 @@ async def on_ready():
     await bot.load_extension("commands.birdbot_announce")
     logging.info("Modül yüklendi: commands.birdbot_announce")
 
+    # Cog'un on_ready'i, bot zaten ready olduğu için dispatch ile çalışmayabilir;
+    # burada açıkça çağırıp embed'leri gönderiyoruz.
+    announce_cog = bot.get_cog("BirdBotAnnounceCog")
+    if announce_cog:
+        try:
+            await announce_cog.on_ready()
+        except Exception as e:
+            logging.error("BirdBotAnnounceCog.on_ready hatası: %s", e)
+
     # BirdBot'a tüm başarımları kilitle (leaderboard'larda görünmez, envanter gibi)
     games_cog = bot.get_cog("GamesCog")
     if games_cog and hasattr(games_cog, "ACHIEVEMENTS_LIST"):
