@@ -239,6 +239,74 @@ class ShopCog(commands.Cog):
         embed.set_footer(text="Earn BirdCoin by selling birds with /sell, spend it in /shop!")
         await interaction.followup.send(embed=embed)
 
+    @discord.app_commands.command(name="pay", description="Send BirdCoin directly to another member")
+    @discord.app_commands.describe(member="Who receives the BirdCoin", amount="How much BirdCoin to send (e.g. 500 or 2.5k)")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def pay(self, interaction: discord.Interaction, member: discord.Member, amount: str):
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.guild:
+            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            return
+
+        if member.id == interaction.user.id:
+            await interaction.followup.send("❌ You can't send BirdCoin to yourself!", ephemeral=True)
+            return
+        if member.id == self.bot.user.id:
+            await interaction.followup.send("❌ You can't send BirdCoin to the bot!", ephemeral=True)
+            return
+
+        try:
+            a = amount.strip().lower().replace(",", ".")
+            if a.endswith("k"):
+                send_amt = float(a[:-1]) * 1000
+            elif a.endswith("m"):
+                send_amt = float(a[:-1]) * 1000000
+            else:
+                send_amt = float(a)
+        except ValueError:
+            await interaction.followup.send("❌ Invalid amount! Use a number like `500` or `2.5k`.", ephemeral=True)
+            return
+
+        if send_amt <= 0:
+            await interaction.followup.send("❌ Amount must be greater than 0!", ephemeral=True)
+            return
+
+        guild_id = interaction.guild.id
+        sender_id = interaction.user.id
+        balance = self.bot.db.get_birdcoin(guild_id, sender_id)
+        if balance < send_amt:
+            await interaction.followup.send(
+                f"❌ Not enough BirdCoin! You have 🪙`{self.fmt_coin(balance)}`, need 🪙`{self.fmt_coin(send_amt)}`.",
+                ephemeral=True,
+            )
+            return
+
+        self.bot.db.remove_birdcoin(guild_id, sender_id, send_amt)
+        self.bot.db.add_birdcoin(guild_id, member.id, send_amt)
+
+        embed = discord.Embed(
+            title="💸 BirdCoin Sent!",
+            description=(
+                f"Sent 🪙 **`{self.fmt_coin(send_amt)}`** BirdCoin to **{member.mention}**!\n"
+                f"Your new balance: 🪙 `{self.fmt_coin(balance - send_amt)}`"
+            ),
+            color=discord.Color.brand_green(),
+        )
+        embed.set_footer(text="Direct BirdCoin transfer")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+        try:
+            await member.send(
+                embed=discord.Embed(
+                    title="📥 BirdCoin Received!",
+                    description=f"**{interaction.user.mention}** sent you 🪙 **`{self.fmt_coin(send_amt)}`** BirdCoin!",
+                    color=discord.Color.green(),
+                )
+            )
+        except Exception:
+            pass
+
     @discord.app_commands.command(name="shop", description="Buy powerups with BirdCoin")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)

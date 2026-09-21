@@ -5,10 +5,10 @@ from collections import Counter
 import discord
 from discord.ext import commands, tasks
 
-CAGE_CAPACITY = {1: 3, 2: 5, 3: 8, 4: 12, 5: 16}
-UPGRADE_COST = {1: 50, 2: 150, 3: 400, 4: 1000}
-MAX_LEVEL = 5
-INCOME_CAP = {1: 100, 2: 250, 3: 500, 4: 1000, 5: 4000}
+CAGE_CAPACITY = {1: 3, 2: 5, 3: 8, 4: 12, 5: 16, 6: 24, 7: 32, 8: 42, 9: 55, 10: 70, 11: 90, 12: 115, 13: 145, 14: 180, 15: 220}
+UPGRADE_COST = {1: 50, 2: 150, 3: 400, 4: 1000, 5: 2000, 6: 4000, 7: 7500, 8: 13000, 9: 21000, 10: 32000, 11: 47000, 12: 66000, 13: 90000, 14: 120000}
+MAX_LEVEL = 15
+INCOME_CAP = {1: 100, 2: 250, 3: 500, 4: 1000, 5: 4000, 6: 8000, 7: 15000, 8: 26000, 9: 42000, 10: 64000, 11: 94000, 12: 130000, 13: 175000, 14: 225000, 15: 280000}
 
 
 class PutAmountModal(discord.ui.Modal, title="Put birds in cage"):
