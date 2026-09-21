@@ -165,7 +165,7 @@ default_birds = [
     ("Radioactive Bird", 1540372078660952175, 0.1, 50),
     ("Emerald Bird", 1549798737189015794, 0.07, 60),
     ("Caseoh Bird", 1548030264167505920, 0.05, 75),
-    ("King Bird", 1551625669597995161, 0.03, 100)
+    ("King Bird", 1551625569718898688, 0.03, 100)
 ]
 
 for bird in default_birds:
