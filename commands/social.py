@@ -293,8 +293,10 @@ class TradeConfirmView(discord.ui.View):
             await interaction.response.send_message("You are not part of this trade!", ephemeral=True)
             return
 
-        if not self.offers[self.initiator.id] or not self.offers[self.target.id]:
-            await interaction.response.send_message("Both users must select at least one bird to trade!", ephemeral=True)
+        init_has = bool(self.offers[self.initiator.id]) or self.offer_coins.get(self.initiator.id, 0) > 0
+        target_has = bool(self.offers[self.target.id]) or self.offer_coins.get(self.target.id, 0) > 0
+        if not init_has and not target_has:
+            await interaction.response.send_message("At least one side must offer birds or BirdCoin to trade!", ephemeral=True)
             return
 
         self.confirmed_users.add(interaction.user.id)
@@ -409,11 +411,6 @@ class TradeRequestView(discord.ui.View):
         await interaction.response.defer()
 
         try:
-            target_birds = self.bot.db.get_inventory(int(self.guild_id), self.target.id)
-            if not target_birds:
-                await interaction.followup.send("You don't have any birds to trade in this server!", ephemeral=True)
-                return
-
             view = TradeConfirmView(self.bot, self.initiator, self.target, self.guild_id)
             content = (
                 f"🤝 **Active Trade** between **{self.initiator.name}** and **{self.target.name}**\n\n"
@@ -452,11 +449,6 @@ class SocialCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
-        user_birds = self.bot.db.get_inventory(guild_id, interaction.user.id)
-
-        if not user_birds:
-            await interaction.followup.send("❌ You don't have any birds in your inventory to trade!", ephemeral=True)
-            return
 
         view = TradeRequestView(self.bot, interaction.user, member, str(guild_id))
         await interaction.followup.send(content=f"🤝 {member.mention}, you have received a trade request from **{interaction.user.name}**!", view=view)
