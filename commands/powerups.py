@@ -16,7 +16,7 @@ class PowerupsCog(commands.Cog):
         "golden_gut": {"name": "🪙 Golden Gut", "desc": "+50% BirdCoin from your next 3 sells", "type": "self"},
         "bigger_net": {"name": "🔭 Double It", "desc": "Guaranteed double bird for your next catch", "type": "self"},
         "scarecrow": {"name": "🧹 Scarecrow", "desc": "Blocks the next sabotage aimed at you", "type": "self"},
-        "bird_whistle": {"name": "🐦 Bird Whistle", "desc": "Instantly call a wild bird to spawn", "type": "self"},
+        "bird_whistle": {"name": "🐦 Bird Whistle", "desc": "70% chance to call a wild bird to spawn", "type": "self"},
         "muzzle": {"name": "🔇 Muzzle", "desc": "Silence a player for 10 seconds", "type": "sabotage"},
     }
 
@@ -308,11 +308,14 @@ class PowerupsCog(commands.Cog):
                 desc = f"🧹 **{interaction.user.mention}** set up a Scarecrow! The next sabotage aimed at them will be blocked."
 
             elif powerup == "bird_whistle":
-                core_cog = self.bot.get_cog("CoreCog")
-                ok = False
-                if core_cog:
-                    ok = await core_cog.force_spawn(guild_id, source=f"{interaction.user.name}'s Whistle")
-                desc = "🐦 You blew the whistle — a wild bird appeared!" if ok else "💨 You blew the whistle, but a bird is already out..."
+                if random.random() < 0.7:
+                    core_cog = self.bot.get_cog("CoreCog")
+                    ok = False
+                    if core_cog:
+                        ok = await core_cog.force_spawn(guild_id, source=f"{interaction.user.name}'s Whistle")
+                    desc = "🐦 You blew the whistle — a wild bird appeared!" if ok else "💨 You blew the whistle, but a bird is already out..."
+                else:
+                    desc = "💨 You blew the whistle, but no bird came..."
 
             elif powerup == "muzzle":
                 entry = self._sabo_entry(guild_id, member.id)
