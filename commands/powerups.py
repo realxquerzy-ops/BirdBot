@@ -1,3 +1,4 @@
+import asyncio
 import random
 import time
 
@@ -309,6 +310,7 @@ class PowerupsCog(commands.Cog):
 
             elif powerup == "bird_whistle":
                 if random.random() < 0.7:
+                    await asyncio.sleep(random.randint(1, 5))
                     core_cog = self.bot.get_cog("CoreCog")
                     ok = False
                     if core_cog:
