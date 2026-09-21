@@ -284,7 +284,7 @@ class MergeView(discord.ui.View):
             lines.append(line)
         embed = discord.Embed(
             title="🔀 Merge Birds",
-            description="\n".join(lines) + "\n\n⚡ **Caseoh Bird** cannot be merged.",
+            description="\n".join(lines) + "\n\n⚡ **Kind Bird** cannot be merged.",
             color=discord.Color.purple()
         )
         embed.set_footer(text="Pick a bird below to merge it into a rarer bird. Max 5 merges at once.")
