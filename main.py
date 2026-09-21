@@ -228,6 +228,25 @@ async def on_ready():
         count += 1
     logging.info("[debug] presence_cache initialized with %s members", count)
     
+    # One-off legacy fix: birdcage-accrued BirdCoin stuck in cage -> move to balance
+    # (guild 1511406716749611171, user 1469734368674197117 had ~30k stacked that the bug
+    #  would not let them cash out). Only runs while cage accumulated > 0, so it never
+    #  double-adds on later restarts.
+    FIX_GUILD = 1511406716749611171
+    FIX_USER = 1469734368674197117
+    try:
+        fix_cage = bot.db.get_birdcage(FIX_GUILD, FIX_USER)
+        if fix_cage and fix_cage.get("accumulated", 0) > 0:
+            fix_amt = fix_cage["accumulated"]
+            bot.db.add_birdcoin(FIX_GUILD, FIX_USER, fix_amt)
+            bot.db.save_birdcage(FIX_GUILD, FIX_USER, fix_cage["birds"], fix_cage["level"], 0.0)
+            logging.info(
+                "[birdcage-fix] Su ana kadar kafeste takili kalan BirdCoin balance'a aktarildi: %.2f (guild=%s user=%s)",
+                fix_amt, FIX_GUILD, FIX_USER,
+            )
+    except Exception as e:
+        logging.error("[birdcage-fix] Uygulanamadi: %s", e)
+    
     for member in bot.get_all_members():
         if member.id in bot.whitelisted_users:
             logging.info("[debug] owner %s status=%s", member, member.status)
