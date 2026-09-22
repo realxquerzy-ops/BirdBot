@@ -422,3 +422,47 @@ class Database:
             {"guild_id": int(r[0]), "user_id": int(r[1]), "birds": self._loads_json(r[2]), "level": int(r[3]), "accumulated": float(r[4])}
             for r in rows
         ]
+
+    def get_catch_stats(self, user_id):
+        row = self.fetchone(
+            "SELECT catches, total_duration, instant, hist FROM catch_stats WHERE user_id = %s",
+            (int(user_id),),
+        )
+        if not row:
+            return {"catches": 0, "total_duration": 0.0, "instant": 0, "hist": []}
+        return {
+            "catches": int(row[0]),
+            "total_duration": float(row[1]),
+            "instant": int(row[2]),
+            "hist": self._loads_json(row[3]),
+        }
+
+    def add_catch(self, user_id, duration, max_hist=20):
+        stats = self.get_catch_stats(user_id)
+        hist = stats["hist"][-max_hist:] + [float(duration)]
+        self.execute(
+            """
+            INSERT INTO catch_stats (user_id, catches, total_duration, instant, hist)
+            VALUES (%s, 1, %s, %s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET
+                catches = catch_stats.catches + 1,
+                total_duration = catch_stats.total_duration + EXCLUDED.total_duration,
+                instant = catch_stats.instant + EXCLUDED.instant,
+                hist = EXCLUDED.hist
+            """,
+            (
+                int(user_id),
+                float(duration),
+                1 if float(duration) < 1.0 else 0,
+                json.dumps(hist),
+            ),
+        )
+        return {
+            "catches": stats["catches"] + 1,
+            "total_duration": stats["total_duration"] + float(duration),
+            "instant": stats["instant"] + (1 if float(duration) < 1.0 else 0),
+            "hist": hist,
+        }
+
+    def reset_catch_stats(self, user_id):
+        self.execute("DELETE FROM catch_stats WHERE user_id = %s", (int(user_id),))

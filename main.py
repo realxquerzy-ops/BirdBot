@@ -125,6 +125,14 @@ db.execute('''CREATE TABLE IF NOT EXISTS birdbot_bans (
     PRIMARY KEY (guild_id, user_id)
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS catch_stats (
+    user_id BIGINT PRIMARY KEY,
+    catches INTEGER DEFAULT 0,
+    total_duration REAL DEFAULT 0,
+    instant INTEGER DEFAULT 0,
+    hist TEXT DEFAULT '[]'
+)''')
+
 db.execute('''CREATE TABLE IF NOT EXISTS battle_log (
     id SERIAL PRIMARY KEY,
     guild_id BIGINT,

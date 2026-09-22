@@ -35,6 +35,12 @@ def generate_math_question():
     return expr, total
 
 
+# --- Anti-bot catch detection thresholds ---
+AUTO_BAN_MIN_CATCHES = 15
+AUTO_BAN_MAX_AVG = 1.2
+AUTO_BAN_MIN_INSTANT_PCT = 0.6
+
+
 class CoreCog(commands.Cog):
     MISSPELLS = {"burd", "berd", "bord", "birdd", "birt", "beard", "b1rd", "gbird", "birb"}
     log = logging.getLogger("birdbot.spawner")
@@ -81,6 +87,56 @@ class CoreCog(commands.Cog):
         if exp >= 1.0:
             return self.spawn_weights
         return [float(bird["weight"]) ** exp for bird in self.bot.birds]
+
+    async def _check_auto_ban(self, user_id, guild):
+        try:
+            stats = self.bot.db.get_catch_stats(int(user_id))
+        except Exception as e:
+            self.log.warning("catch stats lookup failed: %s", e)
+            return
+        if stats["catches"] < AUTO_BAN_MIN_CATCHES:
+            return
+        avg = stats["total_duration"] / stats["catches"]
+        instant_pct = stats["instant"] / stats["catches"]
+        if avg > AUTO_BAN_MAX_AVG or instant_pct < AUTO_BAN_MIN_INSTANT_PCT:
+            return
+        if self.bot.db.is_user_banned(0, int(user_id)):
+            return
+        if int(user_id) in self.bot.whitelisted_users:
+            return
+        self.bot.db.ban_birdbot(0, int(user_id))
+        self.log.warning(
+            "AUTO-BAN user=%s catches=%s avg=%.2fs instant=%.0f%% hist=%s",
+            user_id, stats["catches"], avg, instant_pct * 100,
+            [round(h, 2) for h in stats["hist"]],
+        )
+        await self._notify_auto_ban(int(user_id), guild, stats, avg, instant_pct)
+        try:
+            self.bot.db.reset_catch_stats(int(user_id))
+        except Exception:
+            pass
+
+    async def _notify_auto_ban(self, user_id, guild, stats, avg, instant_pct):
+        embed = discord.Embed(
+            title="🚫 Auto-Ban: Bot catching detected",
+            description=(
+                f"**<@{user_id}>** was globally banned for automated bird catching.\n\n"
+                f"Catches: `{stats['catches']}`\n"
+                f"Average catch time: `{avg:.2f}s`\n"
+                f"Instant (<1s) catches: `{instant_pct * 100:.0f}%`"
+            ),
+            color=discord.Color.red(),
+        )
+        recent = ", ".join(f"{h:.2f}s" for h in stats["hist"][-10:])
+        embed.add_field(name="Recent catch times", value=recent, inline=False)
+        embed.set_footer(text="If this looks wrong, unban with the owner command.")
+        for uid in self.bot.whitelisted_users:
+            try:
+                u = self.bot.get_user(uid)
+                if u is not None:
+                    await u.send(embed=embed)
+            except Exception as e:
+                self.log.warning("auto-ban DM failed %s: %s", uid, e)
 
     @tasks.loop(seconds=30.0)
     async def bird_spawner(self):
@@ -361,6 +417,12 @@ class CoreCog(commands.Cog):
             user_birds.append(caught_bird)
             doubled = True
         self.bot.db.save_inventory(guild_id_int, user_id_int, user_birds)
+
+        try:
+            self.bot.db.add_catch(user_id_int, catch_duration)
+            await self._check_auto_ban(user_id_int, message.guild)
+        except Exception as e:
+            self.log.warning("auto-ban tracking failed: %s", e)
 
         if games_cog:
             if catch_duration < 3.0:
