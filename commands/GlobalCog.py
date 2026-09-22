@@ -6,6 +6,23 @@ class GlobalCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    @discord.app_commands.command(name="rules", description="View the BirdBot rules")
+    @discord.app_commands.allowed_installs(guilds=True, users=True)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    async def rules(self, interaction: discord.Interaction):
+        lines = [
+            "1. **Alt accounts are not allowed.**",
+            "2. **Using bots to catch birds is not allowed.**",
+            "3. **Using exploits to your own advantage is not allowed.**",
+        ]
+        embed = discord.Embed(
+            title="🐦 BirdBot Rules",
+            description="\n".join(lines),
+            color=discord.Color.gold()
+        )
+        embed.set_footer(text="Breaking these rules may result in a BirdBot ban.")
+        await interaction.response.send_message(embed=embed)
+
     @discord.app_commands.command(name="glb", description="View global and advanced leaderboards with filters and fastest times")
     @discord.app_commands.describe(
         filter_by="Choose how to sort the leaderboard",
