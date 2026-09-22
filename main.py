@@ -137,39 +137,6 @@ db.execute('''CREATE TABLE IF NOT EXISTS battle_log (
     created_at TIMESTAMP DEFAULT NOW()
 )''')
 
-db.execute('''CREATE TABLE IF NOT EXISTS leveling (
-    guild_id BIGINT,
-    user_id BIGINT,
-    xp BIGINT DEFAULT 0,
-    level INTEGER DEFAULT 0,
-    total_messages INTEGER DEFAULT 0,
-    voice_minutes INTEGER DEFAULT 0,
-    commands_used INTEGER DEFAULT 0,
-    last_gain TIMESTAMP,
-    PRIMARY KEY (guild_id, user_id)
-)''')
-
-db.execute('''CREATE TABLE IF NOT EXISTS level_rewards (
-    guild_id BIGINT,
-    level INTEGER,
-    role_id BIGINT,
-    PRIMARY KEY (guild_id, level)
-)''')
-
-db.execute('''CREATE TABLE IF NOT EXISTS level_settings (
-    guild_id BIGINT PRIMARY KEY,
-    enabled BOOLEAN DEFAULT TRUE,
-    announce_channel BIGINT,
-    xp_per_message INTEGER DEFAULT 25,
-    cooldown_seconds INTEGER DEFAULT 60,
-    levelup_text TEXT,
-    xp_per_voice INTEGER DEFAULT 20,
-    first_place_role BIGINT
-)''')
-
-db.execute("ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS levelup_text TEXT")
-db.execute("ALTER TABLE level_settings ADD COLUMN IF NOT EXISTS xp_per_voice INTEGER DEFAULT 20")
-
 # Sorgu hızı için indeksler
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_guild ON inventories (guild_id)")
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_user ON inventories (user_id)")

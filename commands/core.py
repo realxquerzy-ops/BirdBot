@@ -417,9 +417,7 @@ class CoreCog(commands.Cog):
                 "</sell:0> - Sell birds for BirdCoin\n"
                 "</shop:0> - Buy powerups with BirdCoin\n"
                 "</birdcage:0> - Put birds in your cage to earn passive BirdCoin\n"
-                "</balance:0> - View your BirdCoin balance\n"
-                "</rank:0> - View your level, XP and rank\n"
-                "</leveling:0> - Leveling: leaderboard, rewards and settings"
+                "</balance:0> - View your BirdCoin balance"
             ),
             color=discord.Color.blue()
         )
