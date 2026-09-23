@@ -139,8 +139,11 @@ db.execute('''CREATE TABLE IF NOT EXISTS catch_stats (
 db.execute('''CREATE TABLE IF NOT EXISTS redeem_codes (
     code TEXT PRIMARY KEY,
     uses_left INTEGER DEFAULT 1,
-    rewards TEXT DEFAULT '{}'
+    rewards TEXT DEFAULT '{}',
+    unlimited BOOLEAN DEFAULT FALSE
 )''')
+
+db.execute("ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS unlimited BOOLEAN DEFAULT FALSE")
 
 db.execute('''CREATE TABLE IF NOT EXISTS redeem_claims (
     code TEXT,

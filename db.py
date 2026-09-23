@@ -399,34 +399,38 @@ class Database:
         )
         return rows
 
-    def add_redeem_code(self, code, uses_left, rewards):
+    def add_redeem_code(self, code, uses_left, rewards, unlimited=False):
         self.execute(
             """
-            INSERT INTO redeem_codes (code, uses_left, rewards) VALUES (%s, %s, %s)
-            ON CONFLICT (code) DO UPDATE SET uses_left = EXCLUDED.uses_left, rewards = EXCLUDED.rewards
+            INSERT INTO redeem_codes (code, uses_left, rewards, unlimited) VALUES (%s, %s, %s, %s)
+            ON CONFLICT (code) DO UPDATE SET
+                uses_left = EXCLUDED.uses_left,
+                rewards = EXCLUDED.rewards,
+                unlimited = EXCLUDED.unlimited
             """,
-            (code.lower(), int(uses_left), json.dumps(rewards)),
+            (code.lower(), int(uses_left), json.dumps(rewards), bool(unlimited)),
         )
 
     def get_redeem_code(self, code):
         return self.fetchone(
-            "SELECT uses_left, rewards FROM redeem_codes WHERE code = %s",
+            "SELECT uses_left, rewards, unlimited FROM redeem_codes WHERE code = %s",
             (code.lower(),),
         )
 
     def claim_redeem(self, guild_id, user_id, code):
         """Atomically claim a redeem code. Returns (status, rewards, uses_left_remaining).
-        status: 'ok' | 'used' | 'empty' | 'invalid'."""
+        status: 'ok' | 'used' | 'empty' | 'invalid'.
+        uses_left_remaining is None when the code is unlimited."""
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT uses_left, rewards FROM redeem_codes WHERE code = %s FOR UPDATE", (code.lower(),))
+                cur.execute("SELECT uses_left, rewards, unlimited FROM redeem_codes WHERE code = %s FOR UPDATE", (code.lower(),))
                 row = cur.fetchone()
                 if not row:
                     conn.commit()
                     return "invalid", {}, 0
-                uses_left, rewards_raw = row
-                if uses_left <= 0:
+                uses_left, rewards_raw, unlimited = row
+                if not unlimited and uses_left <= 0:
                     conn.commit()
                     return "empty", {}, 0
                 cur.execute(
@@ -436,20 +440,22 @@ class Database:
                 if cur.fetchone():
                     conn.commit()
                     return "used", {}, 0
-                cur.execute(
-                    "UPDATE redeem_codes SET uses_left = uses_left - 1 WHERE code = %s AND uses_left > 0",
-                    (code.lower(),),
-                )
-                if cur.rowcount == 0:
-                    conn.commit()
-                    return "empty", {}, 0
+                if not unlimited:
+                    cur.execute(
+                        "UPDATE redeem_codes SET uses_left = uses_left - 1 WHERE code = %s AND uses_left > 0",
+                        (code.lower(),),
+                    )
+                    if cur.rowcount == 0:
+                        conn.commit()
+                        return "empty", {}, 0
                 cur.execute(
                     "INSERT INTO redeem_claims (code, user_id, guild_id) VALUES (%s, %s, %s)",
                     (code.lower(), int(user_id), int(guild_id)),
                 )
                 conn.commit()
                 rewards = self._loads_json(rewards_raw) if rewards_raw else {}
-                return "ok", rewards, uses_left - 1
+                remaining = None if unlimited else uses_left - 1
+                return "ok", rewards, remaining
         except Exception:
             conn.rollback()
             raise

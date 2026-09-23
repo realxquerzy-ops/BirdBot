@@ -93,7 +93,9 @@ class RedeemCog(commands.Cog):
             description=f"**{interaction.user.mention}** redeemed `{code.upper()}` and got:\n" + "\n".join(f"• {l}" for l in lines),
             color=discord.Color.green()
         )
-        embed.set_footer(text=f"{remaining} redemption{'s' if remaining != 1 else ''} left on this code.")
+        embed.set_footer(
+            text="Unlimited redemptions." if remaining is None else f"{remaining} redemption{'s' if remaining != 1 else ''} left on this code."
+        )
         await interaction.followup.send(embed=embed)
 
 
