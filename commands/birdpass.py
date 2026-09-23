@@ -11,22 +11,22 @@ class BirdPassCog(commands.Cog):
         self.bot = bot
 
     LEVEL_REWARDS = {
-        2: [("Good Bird", 2)],
-        3: [("Good Bird", 4)],
-        4: [("Fat Bird", 2)],
+        2: [("Good Bird", 1)],
+        3: [("Good Bird", 2)],
+        4: [("Fat Bird", 1)],
         5: [("Chick", 1)],
-        6: [("Fat Bird", 4)],
+        6: [("Fat Bird", 2)],
         7: [("Yellow Bird", 1)],
         8: [("Scarlet Mascow", 1)],
         9: [("Alpha Bird", 1)],
-        10: [("Cool Bird", 2)],
+        10: [("Cool Bird", 1)],
         11: [("Angry Bird", 1)],
         12: [("Unknowmyt Bird", 1)],
         13: [("Golden Bird", 1)],
         14: [("Rainbow Bird", 1)],
         15: [("Tennis Bird", 1)],
         16: [("Bird 618", 1)],
-        17: [("Radioactive Bird", 2)],
+        17: [("Radioactive Bird", 1)],
     }
 
     PREMIUM_CYCLE = [
@@ -64,7 +64,7 @@ class BirdPassCog(commands.Cog):
 
         cycle = len(self.PREMIUM_CYCLE)
         bird = self.PREMIUM_CYCLE[(level - 18) % cycle]
-        count = 2 + (level - 18) // cycle
+        count = 1 + (level - 18) // (2 * cycle)
         return [(bird, count)]
 
     def coin_reward_for(self, level):

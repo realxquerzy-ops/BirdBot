@@ -59,7 +59,7 @@ class CoreCog(commands.Cog):
         self.bird_spawner.cancel()
 
     def _new_spawn_state(self):
-        return {"active": False, "name": None, "spawn_time": None, "msg_obj": None, "pending_user": None}
+        return {"active": False, "name": None, "spawn_time": None, "msg_obj": None, "pending_user": None, "from_whistle": False}
 
     def _schedule_next_spawn(self, guild_id):
         """Cooldown catch anından itibaren başlasın — hızlı kullanıcılar için anında respawn engeli."""
@@ -159,6 +159,8 @@ class CoreCog(commands.Cog):
                 if self.next_spawn_times.get(guild_id, 0) > now:
                     continue
 
+                state["from_whistle"] = False
+
                 channel = self.bot.get_channel(int(channel_id))
                 if not channel:
                     try:
@@ -218,6 +220,7 @@ class CoreCog(commands.Cog):
             if state["active"]:
                 return False
 
+            state["from_whistle"] = bool(source and "Whistle" in source)
             channel_id = self.bot.server_settings.get(guild_id)
             if not channel_id:
                 return False
@@ -442,11 +445,13 @@ class CoreCog(commands.Cog):
                 pass
 
         birdpass_cog = self.bot.get_cog("BirdPassCog")
-        if birdpass_cog:
+        if birdpass_cog and not state.get("from_whistle", False):
             try:
                 await birdpass_cog.add_xp(guild_id_int, user_id_int, message.channel, caught_bird, xp_mult=xp_mult)
             except Exception as e:
                 print(f"Error in birdpass xp: {e}")
+
+        state["from_whistle"] = False
 
         extra = f" *(... and a double! {double_icon})*" if doubled else ""
         await message.reply(f"🎉 **{message.author.mention}** successfully caught the **{caught_bird}** in **{catch_duration:.2f}s**!{extra}")
