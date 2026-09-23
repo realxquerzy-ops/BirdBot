@@ -399,6 +399,63 @@ class Database:
         )
         return rows
 
+    def add_redeem_code(self, code, uses_left, rewards):
+        self.execute(
+            """
+            INSERT INTO redeem_codes (code, uses_left, rewards) VALUES (%s, %s, %s)
+            ON CONFLICT (code) DO UPDATE SET uses_left = EXCLUDED.uses_left, rewards = EXCLUDED.rewards
+            """,
+            (code.lower(), int(uses_left), json.dumps(rewards)),
+        )
+
+    def get_redeem_code(self, code):
+        return self.fetchone(
+            "SELECT uses_left, rewards FROM redeem_codes WHERE code = %s",
+            (code.lower(),),
+        )
+
+    def claim_redeem(self, guild_id, user_id, code):
+        """Atomically claim a redeem code. Returns (status, rewards, uses_left_remaining).
+        status: 'ok' | 'used' | 'empty' | 'invalid'."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT uses_left, rewards FROM redeem_codes WHERE code = %s FOR UPDATE", (code.lower(),))
+                row = cur.fetchone()
+                if not row:
+                    conn.commit()
+                    return "invalid", {}, 0
+                uses_left, rewards_raw = row
+                if uses_left <= 0:
+                    conn.commit()
+                    return "empty", {}, 0
+                cur.execute(
+                    "SELECT 1 FROM redeem_claims WHERE code = %s AND user_id = %s",
+                    (code.lower(), int(user_id)),
+                )
+                if cur.fetchone():
+                    conn.commit()
+                    return "used", {}, 0
+                cur.execute(
+                    "UPDATE redeem_codes SET uses_left = uses_left - 1 WHERE code = %s AND uses_left > 0",
+                    (code.lower(),),
+                )
+                if cur.rowcount == 0:
+                    conn.commit()
+                    return "empty", {}, 0
+                cur.execute(
+                    "INSERT INTO redeem_claims (code, user_id, guild_id) VALUES (%s, %s, %s)",
+                    (code.lower(), int(user_id), int(guild_id)),
+                )
+                conn.commit()
+                rewards = self._loads_json(rewards_raw) if rewards_raw else {}
+                return "ok", rewards, uses_left - 1
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
     def get_winrate(self, guild_id, user_id):
         row = self.fetchone(
             """

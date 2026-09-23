@@ -136,6 +136,20 @@ db.execute('''CREATE TABLE IF NOT EXISTS catch_stats (
     hist TEXT DEFAULT '[]'
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS redeem_codes (
+    code TEXT PRIMARY KEY,
+    uses_left INTEGER DEFAULT 1,
+    rewards TEXT DEFAULT '{}'
+)''')
+
+db.execute('''CREATE TABLE IF NOT EXISTS redeem_claims (
+    code TEXT,
+    user_id BIGINT,
+    guild_id BIGINT,
+    claimed_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (code, user_id)
+)''')
+
 db.execute('''CREATE TABLE IF NOT EXISTS battle_log (
     id SERIAL PRIMARY KEY,
     guild_id BIGINT,
