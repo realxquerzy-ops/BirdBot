@@ -149,6 +149,21 @@ def _pick_guild(session, guild_id):
     return None
 
 
+def _member_list(guild):
+    members = []
+    try:
+        for m in guild.members:
+            if m.bot:
+                continue
+            name = m.display_name or m.name
+            label = f"{name} ({m.name})" if name != m.name else name
+            members.append({"id": str(m.id), "label": label, "name": m.name})
+    except Exception:
+        pass
+    members.sort(key=lambda x: x["label"].lower())
+    return members
+
+
 async def _gather(session, guild_id):
     guild = _pick_guild(session, guild_id)
     if guild is None:
@@ -179,6 +194,7 @@ async def _gather(session, guild_id):
         "mods": mods,
         "modified": is_modified(BOT, gid),
         "birds": sorted(b["name"] for b in getattr(BOT, "birds", [])),
+        "members": _member_list(guild),
     }
 
 

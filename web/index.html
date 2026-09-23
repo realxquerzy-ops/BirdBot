@@ -156,7 +156,12 @@
     <div class="card" id="giveCard" style="display:none">
       <h2>Owner Tools — Give Coins / Birds</h2>
       <p class="hint">Grant BirdCoin or a bird to a player in this server. This does <strong>not</strong> change the server's modifiers or /glb status.</p>
-      <div class="row"><label>Discord user ID</label><input type="text" id="give_user" placeholder="e.g. 1469734368674197117" style="flex:0 0 240px"></div>
+      <div class="row"><label>Player</label>
+        <select id="give_user" style="flex:1;min-width:260px" required>
+          <option value="">— select a player —</option>
+        </select>
+        <input type="text" id="give_id_manual" placeholder="Discord user ID" style="flex:1;min-width:180px;display:none">
+      </div>
       <div class="row"><label>Add BirdCoin amount</label><input type="number" id="give_coins" min="0" step="1"></div>
       <div class="row"><label>Bird to give</label><select id="give_bird" style="min-width:200px"><option value="">— none —</option></select></div>
       <div class="row"><label>Bird count</label><input type="number" id="give_count" min="1" max="1000" value="1"></div>
@@ -259,10 +264,34 @@ function render() {
       opt.textContent = b;
       sel.appendChild(opt);
     }
+
+    const usel = $("give_user");
+    const prev = usel.value;
+    usel.innerHTML = "";
+    const pick = document.createElement("option");
+    pick.value = "";
+    pick.textContent = "— select a player —";
+    usel.appendChild(pick);
+    for (const m of state.members || []) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.label;
+      usel.appendChild(opt);
+    }
+    const manual = document.createElement("option");
+    manual.value = "__manual__";
+    manual.textContent = "Enter ID manually…";
+    usel.appendChild(manual);
+    usel.value = (state.members || []).some(m => m.id === prev) ? prev : "";
+    $("give_id_manual").style.display = usel.value === "__manual__" ? "" : "none";
   } else {
     giveCard.style.display = "none";
   }
 }
+
+$("give_user").addEventListener("change", () => {
+  $("give_id_manual").style.display = $("give_user").value === "__manual__" ? "" : "none";
+});
 
 function giveStatus(msg, ok) {
   const el = $("st_give");
@@ -271,7 +300,9 @@ function giveStatus(msg, ok) {
 }
 
 function giveUserInput() {
-  return $("give_user").value.trim();
+  const sel = $("give_user").value;
+  if (sel === "__manual__") return $("give_id_manual").value.trim();
+  return sel;
 }
 
 async function grant(payload) {
