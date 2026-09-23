@@ -3,6 +3,8 @@ from datetime import datetime, time, timedelta, timezone
 import discord
 from discord.ext import commands
 
+from commands.birdpass_image import render_birdpass_card
+
 
 class BirdPassCog(commands.Cog):
     def __init__(self, bot):
@@ -28,7 +30,7 @@ class BirdPassCog(commands.Cog):
     }
 
     def xp_for_level(self, level):
-        return 15 * level * (level + 1)
+        return 10 * level * (level + 1)
 
     def compute_level(self, total_xp):
         level = 1
@@ -56,18 +58,29 @@ class BirdPassCog(commands.Cog):
     def _today_iso(self):
         return datetime.now(timezone.utc).date().isoformat()
 
+    @staticmethod
+    def _week_start():
+        today = datetime.now(timezone.utc).date()
+        return today - timedelta(days=today.weekday())
+
     async def add_xp(self, guild_id, user_id, channel, bird_name, xp_mult=1.0):
         value = self.bot.bird_values.get(bird_name, 1)
-        xp_gain = int(round(value * xp_mult))
+        xp_gain = int(round(value * 2 * xp_mult))
 
         guild_id_db = int(guild_id)
         user_id_db = int(user_id)
 
-        xp, claimed_level = self.bot.db.get_birdpass(guild_id_db, user_id_db)
+        xp, claimed_level, week_xp, week_start = self.bot.db.get_birdpass(guild_id_db, user_id_db)
+        ws = self._week_start()
+        if week_start is None or week_start != ws:
+            week_xp = 0.0
+            week_start = ws
+
         old_level = self.compute_level(xp)
         new_xp = xp + xp_gain
         new_level = self.compute_level(new_xp)
-        self.bot.db.save_birdpass(guild_id_db, user_id_db, new_xp, new_level)
+        week_xp += xp_gain
+        self.bot.db.save_birdpass(guild_id_db, user_id_db, new_xp, new_level, week_xp, week_start)
 
         if new_level <= old_level or new_level <= claimed_level:
             return
@@ -95,7 +108,26 @@ class BirdPassCog(commands.Cog):
             except Exception as e:
                 print(f"Could not send birdpass level up: {e}")
 
-    @discord.app_commands.command(name="birdpass", description="View your BirdPass level, XP and upcoming rewards")
+    async def _avatar_pil(self, user):
+        if user is None:
+            return None
+        try:
+            data = await user.display_avatar.with_size(128).read()
+            if not data:
+                return None
+            from PIL import Image as PILImage
+            from io import BytesIO
+            return PILImage.open(BytesIO(data))
+        except Exception:
+            return None
+
+    def _member_for(self, guild, user_id):
+        member = guild.get_member(user_id)
+        if member is not None:
+            return member
+        return self.bot.get_user(user_id)
+
+    @discord.app_commands.command(name="birdpass", description="View your BirdPass level, XP and the weekly Top 3")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def birdpass(self, interaction: discord.Interaction):
@@ -107,34 +139,66 @@ class BirdPassCog(commands.Cog):
         guild_id = interaction.guild.id
         user_id = interaction.user.id
 
-        xp, _ = self.bot.db.get_birdpass(guild_id, user_id)
+        xp, _, week_xp, _ = self.bot.db.get_birdpass(guild_id, user_id)
         level = self.compute_level(xp)
         threshold = self.xp_for_level(level)
         next_threshold = self.xp_for_level(level + 1)
 
         progress = int(xp - threshold)
         need = next_threshold - threshold
-        pct = max(0.0, min(1.0, progress / need if need > 0 else 1.0))
-        bar = "▓" * int(round(10 * pct)) + "░" * (10 - int(round(10 * pct)))
 
         next_reward = self.format_rewards(self.reward_for(level + 1))
         upcoming = []
         for offset in range(2, 7):
-            upcoming.append(f"• Level **{level + offset}**: {self.format_rewards(self.reward_for(level + offset))}")
+            upcoming.append(f"Lvl {level + offset}: {self.format_rewards(self.reward_for(level + offset))}")
 
-        embed = discord.Embed(
-            title=f"🐦 {interaction.user.name}'s BirdPass",
-            description=(
-                f"🔹 **Level:** `{level}`\n"
-                f"📊 **Total XP:** `{int(xp)}`\n"
-                f"{bar} **{progress}/{need}** XP to Level {level + 1}\n\n"
-                f"🎁 **Next Reward (Level {level + 1}):** {next_reward}\n"
-                f"🔮 **Coming up:**\n" + "\n".join(upcoming)
-            ),
-            color=discord.Color.gold()
-        )
-        embed.set_footer(text="Catch birds to earn XP and level up! Rewards are added to your inventory automatically.")
-        await interaction.followup.send(embed=embed)
+        top_rows = self.bot.db.get_weekly_top(guild_id, self._week_start(), 3)
+        top3 = []
+        for i, (uid, uxp) in enumerate(top_rows):
+            member = self._member_for(interaction.guild, uid)
+            name = member.display_name if member else f"User {uid}"
+            av_img = await self._avatar_pil(member)
+            top3.append((name, av_img, uxp))
+
+        av_img = await self._avatar_pil(interaction.user)
+
+        try:
+            buf = render_birdpass_card(
+                display_name=interaction.user.display_name,
+                guild_name=interaction.guild.name,
+                av_img=av_img,
+                level=level,
+                xp=xp,
+                into=progress,
+                need=need,
+                next_reward=next_reward,
+                upcoming=upcoming,
+                top3=top3,
+            )
+        except Exception as e:
+            print(f"BirdPass image failed: {e}")
+            buf = None
+
+        if buf is not None:
+            file = discord.File(buf, filename="birdpass.png")
+            embed = discord.Embed(color=discord.Color.gold())
+            embed.set_image(url="attachment://birdpass.png")
+            embed.set_footer(text="Catch birds to earn XP! Weekly Top 3 resets every Monday.")
+            await interaction.followup.send(embed=embed, file=file)
+        else:
+            embed = discord.Embed(
+                title=f"🐦 {interaction.user.name}'s BirdPass",
+                description=(
+                    f"🔹 **Level:** `{level}`\n"
+                    f"📊 **Total XP:** `{int(xp)}`\n"
+                    f"📈 **Weekly XP:** `{int(week_xp)}`\n"
+                    f"{progress}/{need} XP to Level {level + 1}\n\n"
+                    f"🎁 **Next Reward (Level {level + 1}):** {next_reward}\n"
+                    f"🔮 **Coming up:**\n" + "\n".join(upcoming)
+                ),
+                color=discord.Color.gold()
+            )
+            await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="daily", description="Claim your daily reward: get 2x Fat Bird!")
     @discord.app_commands.allowed_installs(guilds=True, users=False)

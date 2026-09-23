@@ -69,6 +69,9 @@ db.execute('''CREATE TABLE IF NOT EXISTS birdpass (
     PRIMARY KEY (guild_id, user_id)
 )''')
 
+db.execute("ALTER TABLE birdpass ADD COLUMN IF NOT EXISTS week_xp REAL DEFAULT 0")
+db.execute("ALTER TABLE birdpass ADD COLUMN IF NOT EXISTS week_start DATE")
+
 db.execute('''CREATE TABLE IF NOT EXISTS daily_claims (
     guild_id BIGINT,
     user_id BIGINT,

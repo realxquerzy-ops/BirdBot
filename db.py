@@ -152,21 +152,39 @@ class Database:
 
     def get_birdpass(self, guild_id, user_id):
         row = self.fetchone(
-            "SELECT xp, claimed_level FROM birdpass WHERE guild_id = %s AND user_id = %s",
+            "SELECT xp, claimed_level, week_xp, week_start FROM birdpass WHERE guild_id = %s AND user_id = %s",
             (guild_id, user_id),
         )
         if row:
-            return float(row[0]), int(row[1])
-        return 0.0, 1
+            week_xp = float(row[2]) if row[2] is not None else 0.0
+            return float(row[0]), int(row[1]), week_xp, row[3]
+        return 0.0, 1, 0.0, None
 
-    def save_birdpass(self, guild_id, user_id, xp, claimed_level):
+    def save_birdpass(self, guild_id, user_id, xp, claimed_level, week_xp=None, week_start=None):
         self.execute(
             """
-            INSERT INTO birdpass (guild_id, user_id, xp, claimed_level) VALUES (%s, %s, %s, %s)
-            ON CONFLICT (guild_id, user_id) DO UPDATE SET xp = EXCLUDED.xp, claimed_level = EXCLUDED.claimed_level
+            INSERT INTO birdpass (guild_id, user_id, xp, claimed_level, week_xp, week_start)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET
+                xp = EXCLUDED.xp,
+                claimed_level = EXCLUDED.claimed_level,
+                week_xp = EXCLUDED.week_xp,
+                week_start = EXCLUDED.week_start
             """,
-            (guild_id, user_id, xp, claimed_level),
+            (guild_id, user_id, xp, claimed_level, week_xp, week_start),
         )
+
+    def get_weekly_top(self, guild_id, week_start, limit=3):
+        rows = self.fetchall(
+            """
+            SELECT user_id, week_xp FROM birdpass
+            WHERE guild_id = %s AND week_start = %s AND week_xp > 0
+            ORDER BY week_xp DESC, user_id ASC
+            LIMIT %s
+            """,
+            (guild_id, week_start, int(limit)),
+        )
+        return [(int(r[0]), float(r[1])) for r in rows]
 
     def get_last_gamble(self, guild_id, user_id):
         row = self.fetchone(
