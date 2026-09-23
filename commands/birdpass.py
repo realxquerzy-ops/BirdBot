@@ -11,23 +11,41 @@ class BirdPassCog(commands.Cog):
         self.bot = bot
 
     LEVEL_REWARDS = {
-        2: [("Good Bird", 1)],
-        3: [("Good Bird", 2)],
-        4: [("Fat Bird", 1)],
+        2: [("Good Bird", 2)],
+        3: [("Good Bird", 4)],
+        4: [("Fat Bird", 2)],
         5: [("Chick", 1)],
-        6: [("Fat Bird", 2)],
+        6: [("Fat Bird", 4)],
         7: [("Yellow Bird", 1)],
         8: [("Scarlet Mascow", 1)],
         9: [("Alpha Bird", 1)],
-        10: [("Cool Bird", 1)],
+        10: [("Cool Bird", 2)],
         11: [("Angry Bird", 1)],
         12: [("Unknowmyt Bird", 1)],
         13: [("Golden Bird", 1)],
         14: [("Rainbow Bird", 1)],
         15: [("Tennis Bird", 1)],
         16: [("Bird 618", 1)],
-        17: [("Radioactive Bird", 1)],
+        17: [("Radioactive Bird", 2)],
     }
+
+    PREMIUM_CYCLE = [
+        "La Peace Bird",
+        "Golden Bird",
+        "Rainbow Bird",
+        "Cola Bird",
+        "Tennis Bird",
+        "Duolingo Bird",
+        "Bird 618",
+        "Bird Man",
+        "Radioactive Bird",
+        "Emerald Bird",
+        "Caseoh Bird",
+        "King Bird",
+    ]
+
+    COIN_MIN = 20
+    COIN_PER_LEVEL = 6
 
     def xp_for_level(self, level):
         return 10 * level * (level + 1)
@@ -44,16 +62,25 @@ class BirdPassCog(commands.Cog):
         if level <= 17:
             return self.LEVEL_REWARDS[level]
 
-        cycle = len(self.bot.birds)
-        bird = self.bot.birds[(level - 2) % cycle]["name"]
-        count = 1 + (level - 18) // cycle
+        cycle = len(self.PREMIUM_CYCLE)
+        bird = self.PREMIUM_CYCLE[(level - 18) % cycle]
+        count = 2 + (level - 18) // cycle
         return [(bird, count)]
+
+    def coin_reward_for(self, level):
+        if level < 2:
+            return 0
+        return self.COIN_MIN + level * self.COIN_PER_LEVEL
 
     @staticmethod
     def format_rewards(rewards):
         if not rewards:
             return "—"
         return ", ".join(f"`{count}x {bird}`" for bird, count in rewards)
+
+    @staticmethod
+    def format_coins(coins):
+        return "" if coins <= 0 else f"`{int(coins)} coins`"
 
     def _today_iso(self):
         return datetime.now(timezone.utc).date().isoformat()
@@ -86,8 +113,10 @@ class BirdPassCog(commands.Cog):
             return
 
         rewards = []
+        coins = 0
         for level in range(claimed_level + 1, new_level + 1):
             rewards.extend(self.reward_for(level))
+            coins += self.coin_reward_for(level)
 
         if rewards:
             inventory = self.bot.db.get_inventory(guild_id_db, user_id_db)
@@ -95,15 +124,21 @@ class BirdPassCog(commands.Cog):
                 inventory.extend([bird] * count)
             self.bot.db.save_inventory(guild_id_db, user_id_db, inventory)
 
+        if coins > 0:
+            self.bot.db.add_birdcoin(guild_id_db, user_id_db, coins)
+
         if channel:
             try:
+                reward_lines = [self.format_rewards(rewards)]
+                if coins > 0:
+                    reward_lines.append(f"🪙 {self.format_coins(coins)}")
                 embed = discord.Embed(
                     title="🐦 BirdPass Level Up!",
                     description=f"<@{user_id}> reached **Level {new_level}**!",
                     color=discord.Color.gold()
                 )
                 embed.add_field(name="📈 XP", value=f"+{xp_gain} XP (Total: `{new_xp}`)", inline=True)
-                embed.add_field(name="🎁 Rewards", value=self.format_rewards(rewards), inline=True)
+                embed.add_field(name="🎁 Rewards", value="\n".join(reward_lines), inline=True)
                 await channel.send(embed=embed, delete_after=15)
             except Exception as e:
                 print(f"Could not send birdpass level up: {e}")
@@ -148,9 +183,16 @@ class BirdPassCog(commands.Cog):
         need = next_threshold - threshold
 
         next_reward = self.format_rewards(self.reward_for(level + 1))
+        next_coins = self.format_coins(self.coin_reward_for(level + 1))
+        if next_coins:
+            next_reward = f"{next_reward} + {next_coins}"
         upcoming = []
         for offset in range(2, 7):
-            upcoming.append(f"Lvl {level + offset}: {self.format_rewards(self.reward_for(level + offset))}")
+            up_rewards = self.format_rewards(self.reward_for(level + offset))
+            up_coins = self.format_coins(self.coin_reward_for(level + offset))
+            if up_coins:
+                up_rewards = f"{up_rewards} + {up_coins}"
+            upcoming.append(f"Lvl {level + offset}: {up_rewards}")
 
         top_rows = self.bot.db.get_weekly_top(guild_id, self._week_start(), 3)
         top3 = []
