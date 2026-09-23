@@ -159,6 +159,36 @@ def attack_roll(bot, atk_commit):
     return chance, min(steal_num, 3)
 
 
+def fight_coin_reward(bot, atk_val, def_val):
+    total = atk_val + def_val
+    return int(5 + total * 0.4)
+
+
+async def award_winner_rewards(bot, guild_id_int, winner, atk_val, def_val, channel=None):
+    if getattr(winner, "id", None) == bot.user.id:
+        return ""
+    lines = []
+
+    coins = fight_coin_reward(bot, atk_val, def_val)
+    if coins > 0:
+        try:
+            bot.db.add_birdcoin(guild_id_int, winner.id, coins)
+            lines.append(f"🪙 **{winner.name}** earned **{coins} BirdCoin**!")
+        except Exception as e:
+            print(f"[fight-reward] birdcoin error: {e}")
+
+    birdpass_cog = bot.get_cog("BirdPassCog")
+    if birdpass_cog:
+        try:
+            xp = int(10 + (atk_val + def_val) * 2)
+            await birdpass_cog.award_battle_xp(guild_id_int, winner.id, channel, xp)
+            lines.append(f"⚡ **{winner.name}** earned **{xp} BirdPass XP**!")
+        except Exception as e:
+            print(f"[fight-reward] birdpass error: {e}")
+
+    return "\n".join(lines)
+
+
 class FightAddModal(discord.ui.Modal):
     def __init__(self, select_item, view_instance):
         super().__init__(title="Send Birds to Battle")
@@ -504,11 +534,17 @@ class FightChallengeView(discord.ui.View):
         moved = transfer_birds(self.bot, guild_id_int, self.defender.id, self.attacker.id, stolen)
 
         if moved:
+            atk_val = commit_value(self.bot, self.atk_commit)
+            payout = await award_winner_rewards(
+                self.bot, guild_id_int, self.attacker, atk_val, atk_val,
+                getattr(self._expiry_msg, "channel", None)
+            )
             embed = discord.Embed(
                 title="⚔️ Raid Successful!",
                 description=(
                     f"**{self.attacker.name}** ignored their refusal and raided **{self.defender.name}**!\n"
                     f"🕵️ Stolen: **{fmt_commit(Counter(moved))}**"
+                    + (f"\n{payout}" if payout else "")
                 ),
                 color=discord.Color.orange()
             )
@@ -852,6 +888,13 @@ class AutoBattleView(discord.ui.View):
                 powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
                 loot = f"\n🎁 **{winner.name}** looted: {powerups_cog.POWERUPS[drop]['name']}!"
 
+        reward_payout = ""
+        if not self.friendly and not shield_saved:
+            reward_payout = await award_winner_rewards(
+                self.bot, guild_id_int, winner, atk_val, def_val,
+                getattr(getattr(self, "_expiry_msg", None), "channel", None)
+            )
+
         result_lines = []
         if attacker_wins:
             result_lines.append(
@@ -873,6 +916,8 @@ class AutoBattleView(discord.ui.View):
                 result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
         if loot:
             result_lines.append(loot)
+        if reward_payout:
+            result_lines.append(reward_payout)
 
         embed = discord.Embed(
             title="⚔️ Battle Over!",
@@ -1105,6 +1150,13 @@ class FightLiveView(discord.ui.View):
                 powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
                 loot = f"\n🎁 **{winner.name}** looted: {powerups_cog.POWERUPS[drop]['name']}!"
 
+        reward_payout = ""
+        if not shield_saved:
+            reward_payout = await award_winner_rewards(
+                self.bot, guild_id_int, winner, atk_val, def_val,
+                getattr(getattr(self, "_expiry_msg", None), "channel", None)
+            )
+
         result_lines = []
         if shield_saved:
             result_lines.append(f"🛡️ **{loser.name}**'s Shield protected their birds!")
@@ -1116,6 +1168,8 @@ class FightLiveView(discord.ui.View):
                 result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
         if loot:
             result_lines.append(loot)
+        if reward_payout:
+            result_lines.append(reward_payout)
 
         embed = discord.Embed(
             title="⚔️ Battle Over!",
@@ -1716,6 +1770,13 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
             powerups_cog.bot.db.add_powerup(guild_id_int, winner.id, drop, 1)
             loot = f"\n🎁 **{winner.name}** looted: {powerups_cog.POWERUPS[drop]['name']}!"
 
+    reward_payout = ""
+    if not friendly and not shield_saved:
+        reward_payout = await award_winner_rewards(
+            bot, guild_id_int, winner, atk_val, def_val,
+            getattr(getattr(view, "_expiry_msg", None), "channel", None)
+        )
+
     result_lines = []
     if attacker_wins:
         result_lines.append(
@@ -1736,6 +1797,8 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
         result_lines.append(f"🕊️ The surviving birds returned to **{loser.name}**.")
     if loot:
         result_lines.append(loot)
+    if reward_payout:
+        result_lines.append(reward_payout)
 
     msg = getattr(view, "_expiry_msg", None) or view.message
 

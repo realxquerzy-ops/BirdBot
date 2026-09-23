@@ -90,10 +90,7 @@ class BirdPassCog(commands.Cog):
         today = datetime.now(timezone.utc).date()
         return today - timedelta(days=today.weekday())
 
-    async def add_xp(self, guild_id, user_id, channel, bird_name, xp_mult=1.0):
-        value = self.bot.bird_values.get(bird_name, 1)
-        xp_gain = int(round(value * 2 * xp_mult))
-
+    async def _gain_xp(self, guild_id, user_id, channel, xp_gain):
         guild_id_db = int(guild_id)
         user_id_db = int(user_id)
 
@@ -142,6 +139,14 @@ class BirdPassCog(commands.Cog):
                 await channel.send(embed=embed, delete_after=15)
             except Exception as e:
                 print(f"Could not send birdpass level up: {e}")
+
+    async def award_battle_xp(self, guild_id, user_id, channel, xp_amount):
+        await self._gain_xp(int(guild_id), int(user_id), channel, int(xp_amount))
+
+    async def add_xp(self, guild_id, user_id, channel, bird_name, xp_mult=1.0):
+        value = self.bot.bird_values.get(bird_name, 1)
+        xp_gain = int(round(value * 2 * xp_mult))
+        await self._gain_xp(int(guild_id), int(user_id), channel, xp_gain)
 
     async def _avatar_pil(self, user):
         if user is None:
