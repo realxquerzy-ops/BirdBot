@@ -60,6 +60,16 @@
 <body>
 <div class="wrap">
   <div id="loading">Loading…</div>
+  <div id="loadError" style="display:none">
+    <div class="card" style="text-align:center">
+      <h2>Couldn't load the panel</h2>
+      <p class="muted" id="loadErrorMsg"></p>
+      <div class="actions" style="justify-content:center;border:none;padding:0">
+        <button class="btn primary" id="retryBtn">Try again</button>
+        <a class="btn" href="/auth/logout">Log out</a>
+      </div>
+    </div>
+  </div>
 
   <div id="login" class="login" style="display:none">
     <h1>BirdBot Settings</h1>
@@ -142,6 +152,21 @@
       </div>
       <div class="status" id="st_mods"></div>
     </div>
+
+    <div class="card" id="giveCard" style="display:none">
+      <h2>Owner Tools — Give Coins / Birds</h2>
+      <p class="hint">Grant BirdCoin or a bird to a player in this server. This does <strong>not</strong> change the server's modifiers or /glb status.</p>
+      <div class="row"><label>Discord user ID</label><input type="text" id="give_user" placeholder="e.g. 1469734368674197117" style="flex:0 0 240px"></div>
+      <div class="row"><label>Add BirdCoin amount</label><input type="number" id="give_coins" min="0" step="1"></div>
+      <div class="row"><label>Bird to give</label><select id="give_bird" style="min-width:200px"><option value="">— none —</option></select></div>
+      <div class="row"><label>Bird count</label><input type="number" id="give_count" min="1" max="1000" value="1"></div>
+      <div class="actions">
+        <button class="btn primary" id="giveCoinsBtn">Give coins</button>
+        <button class="btn primary" id="giveBirdBtn">Give bird</button>
+        <button class="btn" id="giveInfiniteBtn">Set infinite coins</button>
+      </div>
+      <div class="status" id="st_give"></div>
+    </div>
   </div>
 </div>
 
@@ -159,11 +184,30 @@ let state = null;
 const $ = (id) => document.getElementById(id);
 
 async function api(path, opts = {}) {
-  const r = await fetch(path, opts);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  let r;
+  try {
+    r = await fetch(path, Object.assign({}, opts, { signal: controller.signal }));
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === "AbortError") throw new Error("Request timed out");
+    throw new Error("Network error");
+  }
+  clearTimeout(timer);
   if (r.status === 401) throw new Error("not_authed");
   const data = await r.json().catch(() => ({}));
   if (data && data.ok === false) throw new Error(data.error || "Server error");
   return data;
+}
+
+function showLoadError(msg) {
+  $("loading").style.display = "none";
+  $("panel").style.display = "none";
+  $("login").style.display = "none";
+  const el = $("loadError");
+  $("loadErrorMsg").textContent = msg || "Something went wrong. Try again.";
+  el.style.display = "";
 }
 
 function render() {
@@ -199,7 +243,85 @@ function render() {
     warn.appendChild(t);
     warn.style.display = "";
   }
+
+  const giveCard = $("giveCard");
+  if (state.is_owner) {
+    giveCard.style.display = "";
+    const sel = $("give_bird");
+    sel.innerHTML = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "— none —";
+    sel.appendChild(none);
+    for (const b of state.birds || []) {
+      const opt = document.createElement("option");
+      opt.value = b;
+      opt.textContent = b;
+      sel.appendChild(opt);
+    }
+  } else {
+    giveCard.style.display = "none";
+  }
 }
+
+function giveStatus(msg, ok) {
+  const el = $("st_give");
+  el.textContent = msg;
+  el.className = "status " + (ok ? "ok" : "err");
+}
+
+function giveUserInput() {
+  return $("give_user").value.trim();
+}
+
+async function grant(payload) {
+  await api("/api/grant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ guild: state.guild.id, data: payload }),
+  });
+}
+
+$("giveCoinsBtn").addEventListener("click", async () => {
+  const uid = giveUserInput();
+  const coins = $("give_coins").value.trim();
+  if (!uid) { giveStatus("Enter a user ID.", false); return; }
+  if (coins === "" || Number(coins) <= 0) { giveStatus("Enter a coin amount.", false); return; }
+  giveStatus("Giving coins…", true);
+  try {
+    const r = await grant({ user_id: uid, coins: Number(coins) });
+    giveStatus("Coins added. New balance: " + r.balance, true);
+  } catch (e) {
+    giveStatus("Error: " + e.message, false);
+  }
+});
+
+$("giveBirdBtn").addEventListener("click", async () => {
+  const uid = giveUserInput();
+  const bird = $("give_bird").value;
+  const count = Number($("give_count").value) || 1;
+  if (!uid) { giveStatus("Enter a user ID.", false); return; }
+  if (!bird) { giveStatus("Pick a bird to give.", false); return; }
+  giveStatus("Giving bird…", true);
+  try {
+    const r = await grant({ user_id: uid, bird, count });
+    giveStatus(`Gave ${r.count} × ${r.bird_added}. Inventory size now: ${r.inventory_size}.`, true);
+  } catch (e) {
+    giveStatus("Error: " + e.message, false);
+  }
+});
+
+$("giveInfiniteBtn").addEventListener("click", async () => {
+  const uid = giveUserInput();
+  if (!uid) { giveStatus("Enter a user ID.", false); return; }
+  giveStatus("Setting infinite coins…", true);
+  try {
+    const r = await grant({ user_id: uid, infinite: true });
+    giveStatus("Infinite coins set! Balance: " + r.balance, true);
+  } catch (e) {
+    giveStatus("Error: " + e.message, false);
+  }
+});
 
 function fillSelect(el, items, selected) {
   el.innerHTML = "";

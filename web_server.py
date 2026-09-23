@@ -173,10 +173,12 @@ async def _gather(session, guild_id):
         "guilds": [{"id": str(g.id), "name": g.name} for g in _available_guilds(session)],
         "guild": {"id": str(gid), "name": guild.name},
         "user": {"id": session["user"].get("id"), "username": session["user"].get("username")},
+        "is_owner": _is_owner_id(session["user"].get("id")),
         "invite_url": invite,
         "defaults": DEFAULT_MODS,
         "mods": mods,
         "modified": is_modified(BOT, gid),
+        "birds": sorted(b["name"] for b in getattr(BOT, "birds", [])),
     }
 
 
@@ -195,6 +197,71 @@ async def _apply(session, guild_id, data):
         "mods": mods,
         "modified": is_modified(BOT, guild.id),
     }
+
+
+INFINITE_AMOUNT = 999999999999.0
+
+
+def _is_owner_id(user_id):
+    owners = getattr(BOT, "whitelisted_users", []) or []
+    return str(user_id) in {str(o) for o in owners}
+
+
+async def _grant(session, guild_id, data):
+    user_id = data.get("user_id")
+    if user_id is None or str(user_id).strip() == "":
+        return {"ok": False, "error": "Missing user_id."}
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "user_id must be a Discord user ID."}
+
+    owner = session.get("user", {}).get("id")
+    if not _is_owner_id(owner):
+        return {"ok": False, "error": "Only the bot owner can grant coins or birds."}
+
+    guild = _pick_guild(session, guild_id)
+    if guild is None:
+        return {"ok": False, "error": "No server is available. Make sure the bot is in the server and you have Manage Server."}
+
+    db = BOT.db
+    results = {}
+
+    if data.get("infinite"):
+        db.set_birdcoin(guild.id, user_id_int, INFINITE_AMOUNT)
+        results["balance"] = INFINITE_AMOUNT
+
+    coins = data.get("coins")
+    if coins is not None and str(coins).strip() != "":
+        try:
+            amt = float(coins)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Invalid coin amount."}
+        if amt < 0:
+            return {"ok": False, "error": "Coin amount can't be negative."}
+        db.add_birdcoin(guild.id, user_id_int, amt)
+        results["balance"] = db.get_birdcoin(guild.id, user_id_int)
+
+    bird = data.get("bird")
+    count = int(data.get("count") or 1)
+    if bird:
+        names = {b["name"] for b in getattr(BOT, "birds", [])}
+        if bird not in names:
+            return {"ok": False, "error": f"Unknown bird '{bird}'."}
+        if count < 1 or count > 1000:
+            return {"ok": False, "error": "Bird count must be between 1 and 1000."}
+        inv = db.get_inventory(guild.id, user_id_int)
+        inv.extend([bird] * count)
+        db.save_inventory(guild.id, user_id_int, inv)
+        results["bird_added"] = bird
+        results["count"] = count
+        results["inventory_size"] = len(inv)
+
+    if not results:
+        return {"ok": False, "error": "Nothing to grant. Send coins=True, infinite, and/or a bird."}
+    results["ok"] = True
+    results["user_id"] = user_id_int
+    return results
 
 
 class WebHandler(BaseHTTPRequestHandler):
@@ -304,29 +371,67 @@ a{{color:#8ab4ff;text-decoration:none}}
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path != "/api/apply":
-            self._json(404, {"ok": False, "error": "Not found"})
+        if parsed.path == "/api/apply":
+            self._handle_apply()
             return
+        if parsed.path == "/api/grant":
+            self._handle_grant()
+            return
+        self._json(404, {"ok": False, "error": "Not found"})
+
+    def _read_json_body(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+            if length <= 0:
+                return None, "Empty body"
+            return json.loads(self.rfile.read(length).decode("utf-8")), None
+        except Exception as e:
+            return None, f"Bad request: {e}"
+
+    def _check_bot_ready(self):
+        if BOT is None:
+            self._json(503, {"ok": False, "error": "Bot is still starting up. Try again in a few seconds."})
+            return False
+        return True
+
+    def _handle_apply(self):
         session = self._session()
         if not session:
             self._json(401, {"ok": False, "error": "not_authed"})
             return
-        try:
-            length = int(self.headers.get("Content-Length", "0") or 0)
-            if length <= 0:
-                self._json(400, {"ok": False, "error": "Empty body"})
-                return
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except Exception as e:
-            self._json(400, {"ok": False, "error": f"Bad request: {e}"})
+        payload, err = self._read_json_body()
+        if err:
+            self._json(400, {"ok": False, "error": err})
+            return
+        if not self._check_bot_ready():
             return
         guild_id = payload.get("guild") or None
         data = payload.get("data") or {}
-        if BOT is None:
-            self._json(503, {"ok": False, "error": "Bot is still starting up. Try again in a few seconds."})
-            return
         try:
             result = _run_on_loop(_apply(session, guild_id, data))
+            if result.get("ok") is False:
+                self._json(400, result)
+                return
+            self._json(200, result)
+        except Exception as e:
+            traceback.print_exc()
+            self._json(500, {"ok": False, "error": str(e)})
+
+    def _handle_grant(self):
+        session = self._session()
+        if not session:
+            self._json(401, {"ok": False, "error": "not_authed"})
+            return
+        payload, err = self._read_json_body()
+        if err:
+            self._json(400, {"ok": False, "error": err})
+            return
+        if not self._check_bot_ready():
+            return
+        guild_id = payload.get("guild") or None
+        data = payload.get("data") or {}
+        try:
+            result = _run_on_loop(_grant(session, guild_id, data))
             if result.get("ok") is False:
                 self._json(400, result)
                 return

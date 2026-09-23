@@ -290,6 +290,15 @@ class Database:
             (guild_id, user_id, amount),
         )
 
+    def set_birdcoin(self, guild_id, user_id, amount):
+        self.execute(
+            """
+            INSERT INTO birdcoin (guild_id, user_id, balance) VALUES (%s, %s, %s)
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET balance = EXCLUDED.balance
+            """,
+            (int(guild_id), int(user_id), amount),
+        )
+
     def ban_birdbot(self, guild_id, user_id):
         self.execute(
             "INSERT INTO birdbot_bans (guild_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
