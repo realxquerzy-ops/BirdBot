@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 
 from commands._safe import log_error, safe_ack
+from mods import get_mods
 
 
 class MultiQuantityModal(discord.ui.Modal):
@@ -168,7 +169,7 @@ class TradeConfirmView(discord.ui.View):
     MAX_SLOTS = 9
 
     def __init__(self, bot, initiator, target, guild_id):
-        super().__init__(timeout=60)
+        super().__init__(timeout=get_mods(bot, guild_id).get("trade_timeout_sec", 60))
         self.bot = bot
         self.initiator = initiator
         self.target = target
@@ -396,7 +397,7 @@ class TradeConfirmView(discord.ui.View):
 
 class TradeRequestView(discord.ui.View):
     def __init__(self, bot, initiator, target, guild_id):
-        super().__init__(timeout=30)
+        super().__init__(timeout=min(30, get_mods(bot, guild_id).get("trade_timeout_sec", 60)))
         self.bot = bot
         self.initiator = initiator
         self.target = target
@@ -449,6 +450,10 @@ class SocialCog(commands.Cog):
             return
 
         guild_id = interaction.guild.id
+
+        if not get_mods(self.bot, guild_id).get("trading", True):
+            await interaction.followup.send("❌ Trading is disabled in this server.", ephemeral=True)
+            return
 
         view = TradeRequestView(self.bot, interaction.user, member, str(guild_id))
         await interaction.followup.send(content=f"🤝 {member.mention}, you have received a trade request from **{interaction.user.name}**!", view=view)

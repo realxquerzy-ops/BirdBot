@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands
 
+from mods import modified_guild_ids
+
 
 class GlobalCog(commands.Cog):
     def __init__(self, bot):
@@ -44,6 +46,7 @@ class GlobalCog(commands.Cog):
             fastest_times = getattr(self.bot, "fastest_times", {})
             bird_values = self.bot.bird_values_lower
             all_global_bans, all_guild_bans = self.bot.db.get_all_bans_map()
+            modified_guilds = modified_guild_ids(self.bot)
 
             # --- SUNUCU BAZLI FİLTRELER ---
             if filter_by in ["server_value", "server_count", "server_fastest_time"]:
@@ -58,6 +61,8 @@ class GlobalCog(commands.Cog):
                     g_id, u_id, birds_json = str(row[0]), str(row[1]), row[2]
                     u_int = int(u_id)
                     g_int = int(g_id)
+                    if g_int in modified_guilds:
+                        continue
                     if u_int == self.bot.user.id:
                         continue
                     if u_int in all_global_bans:
@@ -112,12 +117,18 @@ class GlobalCog(commands.Cog):
 
             # --- OYUNCU BAZLI FİLTRELER ---
             if server_id:
+                if int(server_id) in modified_guilds:
+                    await interaction.followup.send(
+                        f"❌ Server ID `{server_id}` has custom settings and is excluded from leaderboards.",
+                        ephemeral=True,
+                    )
+                    return
                 rows = self.bot.db.fetchall(
                     "SELECT user_id, birds FROM inventories WHERE guild_id = %s", (int(server_id),)
                 )
                 banned = self.bot.db.get_banned_user_ids(int(server_id))
             else:
-                rows = self.bot.db.fetchall("SELECT user_id, birds FROM inventories")
+                rows = self.bot.db.fetchall("SELECT guild_id, user_id, birds FROM inventories")
                 banned = all_global_bans
 
             if not rows:
@@ -126,12 +137,18 @@ class GlobalCog(commands.Cog):
 
             user_stats = {}
             for row in rows:
-                u_id = str(row[0])
+                if len(row) == 3:
+                    g_id, u_id, birds_raw = row
+                    if int(g_id) in modified_guilds:
+                        continue
+                else:
+                    u_id, birds_raw = row
+                u_id = str(u_id)
                 if int(u_id) == self.bot.user.id:
                     continue
                 if int(u_id) in banned:
                     continue
-                birds_list = self.bot.db._loads_json(row[1])
+                birds_list = self.bot.db._loads_json(birds_raw)
                 if u_id not in user_stats:
                     user_stats[u_id] = {
                         "value": 0,

@@ -9,6 +9,7 @@ from discord.ext import commands
 
 
 from commands._safe import log_error, safe_ack
+from mods import get_mods
 
 
 def commit_value(bot, commit):
@@ -410,7 +411,7 @@ class FightChallengeView(discord.ui.View):
         self.atk_commit = atk_commit
         self.friendly = friendly
         self._resolving = False
-        self._deadline = time.time() + 60
+        self._deadline = time.time() + max(5, int(get_mods(bot, guild_id).get("fight_ignore_sec", 60)))
         self._timer_task = asyncio.create_task(self._countdown())
 
     def stop(self):

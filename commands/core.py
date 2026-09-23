@@ -7,6 +7,8 @@ import time
 import discord
 from discord.ext import commands, tasks
 
+from mods import get_mods
+
 
 def generate_math_question():
     a = random.randint(2, 12)
@@ -63,7 +65,10 @@ class CoreCog(commands.Cog):
 
     def _schedule_next_spawn(self, guild_id):
         """Cooldown catch anından itibaren başlasın — hızlı kullanıcılar için anında respawn engeli."""
-        self.next_spawn_times[guild_id] = time.time() + random.randint(120, 240)
+        mods = get_mods(self.bot, guild_id)
+        lo = max(1, int(mods["spawn_min_sec"]))
+        hi = max(lo, int(mods["spawn_max_sec"]))
+        self.next_spawn_times[guild_id] = time.time() + random.randint(lo, hi)
 
     WEEKEND_RARITY_EXP = 0.85
 
@@ -80,6 +85,12 @@ class CoreCog(commands.Cog):
         exp = 1.0
         if boost > 0:
             exp = max(0.30, 1.0 - 0.035 * boost)
+
+        mods = get_mods(self.bot, guild_id)
+        luck = mods["luck_global"] * mods["luck_spawn"]
+        if luck and luck != 1.0:
+            exp /= max(luck, 0.05)
+            exp = max(0.05, min(exp, 1.0))
 
         if self._is_weekend():
             exp *= self.WEEKEND_RARITY_EXP

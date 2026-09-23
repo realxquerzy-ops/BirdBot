@@ -5,6 +5,8 @@ from collections import Counter
 import discord
 from discord.ext import commands
 
+from mods import get_mods
+
 
 class BoostView(discord.ui.View):
     def __init__(self, cog, guild_id, guild_name):
@@ -563,16 +565,24 @@ class GamesCog(commands.Cog):
 
             guild_id = interaction.guild.id
             user_id = interaction.user.id
+
+            mods = get_mods(self.bot, guild_id)
+            if not mods.get("gambling", True):
+                await interaction.followup.send("❌ Gambling is disabled in this server.", ephemeral=True)
+                return
+
             now = int(time.time())
             last = self.bot.db.get_last_gamble(guild_id, user_id)
-            remaining = 300 - (now - last)
-            if remaining > 0:
-                await interaction.followup.send(
-                    f"⏳ You can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s** "
-                    f"(once every 5 minutes).",
-                    ephemeral=True
-                )
-                return
+            cd = int(mods.get("gamble_cd_sec", 300))
+            if cd > 0:
+                remaining = cd - (now - last)
+                if remaining > 0:
+                    await interaction.followup.send(
+                        f"⏳ You can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s** "
+                        f"(once every {cd // 60}m {cd % 60}s).",
+                        ephemeral=True
+                    )
+                    return
             self.bot.db.set_last_gamble(guild_id, user_id, now)
 
             matched_bird_name = None
@@ -617,7 +627,8 @@ class GamesCog(commands.Cog):
                 if self.rarest_bird["name"].lower() == matched_bird_name.lower() and number == current_count:
                     await self.unlock_achievement(user_id, "big_bet", interaction.channel, guild_id)
 
-            won = random.choice([True, False])
+            win_chance = min(0.5 * mods.get("luck_global", 1.0) * mods.get("luck_gamble", 1.0), 1.0)
+            won = random.random() < win_chance
             key = (str(guild_id), str(user_id))
 
             if won:
@@ -702,16 +713,24 @@ class GamesCog(commands.Cog):
 
             guild_id = interaction.guild.id
             user_id = interaction.user.id
+
+            mods = get_mods(self.bot, guild_id)
+            if not mods.get("gambling", True):
+                await interaction.followup.send("❌ Gambling is disabled in this server.", ephemeral=True)
+                return
+
             now = int(time.time())
             last = self.bot.db.get_last_gamble(guild_id, user_id)
-            remaining = 300 - (now - last)
-            if remaining > 0:
-                await interaction.followup.send(
-                    f"⏳ You can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s** "
-                    f"(once every 5 minutes).",
-                    ephemeral=True
-                )
-                return
+            cd = int(mods.get("gamble_cd_sec", 300))
+            if cd > 0:
+                remaining = cd - (now - last)
+                if remaining > 0:
+                    await interaction.followup.send(
+                        f"⏳ You can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s** "
+                        f"(once every {cd // 60}m {cd % 60}s).",
+                        ephemeral=True
+                    )
+                    return
             self.bot.db.set_last_gamble(guild_id, user_id, now)
 
             user_birds = self.bot.db.get_inventory(guild_id, user_id)
@@ -727,7 +746,8 @@ class GamesCog(commands.Cog):
             if self.rarest_bird and counts.get(self.rarest_bird["name"], 0) > 0:
                 await self.unlock_achievement(user_id, "big_bet", interaction.channel, guild_id)
 
-            won = random.choice([True, False])
+            win_chance = min(0.5 * mods.get("luck_global", 1.0) * mods.get("luck_gamble", 1.0), 1.0)
+            won = random.random() < win_chance
 
             if won:
                 doubled = list(user_birds) + list(user_birds)

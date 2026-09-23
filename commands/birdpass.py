@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 
 from commands.birdpass_image import render_birdpass_card
+from mods import get_mods
 
 
 class BirdPassCog(commands.Cog):
@@ -56,7 +57,21 @@ class BirdPassCog(commands.Cog):
             level += 1
         return level
 
-    def reward_for(self, level):
+    def coin_reward_for(self, level):
+        if level < 2:
+            return 0
+        return self.COIN_MIN + level * self.COIN_PER_LEVEL
+
+    def reward_for(self, level, guild_id=None):
+        got = self._base_reward_for(level)
+        if not got or guild_id is None:
+            return got
+        mult = float(get_mods(self.bot, guild_id).get("birdpass_reward_mult", 1.0))
+        if mult == 1.0:
+            return got
+        return [(bird, max(1, round(count * mult))) for bird, count in got]
+
+    def _base_reward_for(self, level):
         if level < 2:
             return []
         if level <= 17:
@@ -66,11 +81,6 @@ class BirdPassCog(commands.Cog):
         bird = self.PREMIUM_CYCLE[(level - 18) % cycle]
         count = 1 + (level - 18) // (2 * cycle)
         return [(bird, count)]
-
-    def coin_reward_for(self, level):
-        if level < 2:
-            return 0
-        return self.COIN_MIN + level * self.COIN_PER_LEVEL
 
     @staticmethod
     def format_rewards(rewards):
@@ -100,6 +110,9 @@ class BirdPassCog(commands.Cog):
             week_xp = 0.0
             week_start = ws
 
+        xp_mult_mod = float(get_mods(self.bot, guild_id_db).get("birdpass_xp_mult", 1.0))
+        xp_gain = int(xp_gain * xp_mult_mod)
+
         old_level = self.compute_level(xp)
         new_xp = xp + xp_gain
         new_level = self.compute_level(new_xp)
@@ -112,7 +125,7 @@ class BirdPassCog(commands.Cog):
         rewards = []
         coins = 0
         for level in range(claimed_level + 1, new_level + 1):
-            rewards.extend(self.reward_for(level))
+            rewards.extend(self.reward_for(level, guild_id=guild_id_db))
             coins += self.coin_reward_for(level)
 
         if rewards:

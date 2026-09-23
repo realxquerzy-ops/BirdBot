@@ -1,4 +1,5 @@
 import json
+import time
 from urllib.parse import urlparse
 
 import psycopg2
@@ -547,3 +548,67 @@ class Database:
 
     def reset_catch_stats(self, user_id):
         self.execute("DELETE FROM catch_stats WHERE user_id = %s", (int(user_id),))
+
+    def get_server_mods(self, guild_id):
+        row = self.fetchone(
+            "SELECT mods FROM server_mods WHERE guild_id = %s", (int(guild_id),)
+        )
+        if not row or row[0] is None:
+            return {}
+        val = row[0]
+        if isinstance(val, dict):
+            return val
+        if isinstance(val, str):
+            return json.loads(val)
+        return {}
+
+    def set_server_mods(self, guild_id, mods):
+        if mods:
+            self.execute(
+                """
+                INSERT INTO server_mods (guild_id, mods) VALUES (%s, %s)
+                ON CONFLICT (guild_id) DO UPDATE SET mods = EXCLUDED.mods
+                """,
+                (int(guild_id), json.dumps(mods)),
+            )
+        else:
+            self.execute("DELETE FROM server_mods WHERE guild_id = %s", (int(guild_id),))
+
+    def get_all_server_mods(self):
+        rows = self.fetchall("SELECT guild_id, mods FROM server_mods")
+        result = {}
+        for g, m in rows:
+            if m is None:
+                continue
+            val = m if isinstance(m, dict) else json.loads(m)
+            result[int(g)] = val
+        return result
+
+    def save_web_session(self, token, user_id, username, manageable, expires):
+        self.execute(
+            "INSERT INTO web_sessions (token, user_id, username, manageable, expires) "
+            "VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, "
+            "username = EXCLUDED.username, manageable = EXCLUDED.manageable, "
+            "expires = EXCLUDED.expires",
+            (token, user_id, username, json.dumps(manageable), int(expires)),
+        )
+
+    def get_web_session(self, token):
+        row = self.fetchone(
+            "SELECT user_id, username, manageable, expires FROM web_sessions WHERE token = %s",
+            (token,),
+        )
+        if not row:
+            return None
+        return {
+            "user": {"id": row[0], "username": row[1]},
+            "manageable": json.loads(row[2] or "{}"),
+            "exp": float(row[3]),
+        }
+
+    def delete_web_session(self, token):
+        self.execute("DELETE FROM web_sessions WHERE token = %s", (token,))
+
+    def cleanup_web_sessions(self):
+        self.execute("DELETE FROM web_sessions WHERE expires < %s", (int(time.time()),))

@@ -3,6 +3,8 @@ from collections import Counter
 import discord
 from discord.ext import commands
 
+from mods import get_mods
+
 
 class ShopCartView(discord.ui.View):
     def __init__(self, bot, cog, guild_id, user_id):
@@ -15,6 +17,7 @@ class ShopCartView(discord.ui.View):
 
         info = cog._powerup_info()
         for i, (key, price) in enumerate(cog.SHOP_PRICES.items()):
+            price = cog.price_for(guild_id, key)
             p = info.get(key)
             name = p["name"] if p else key
             emoji = "✨" if p and p["type"] == "self" else "🪃"
@@ -114,10 +117,16 @@ class ShopCog(commands.Cog):
         cog = self.bot.get_cog("PowerupsCog")
         return getattr(cog, "POWERUPS", {}) if cog else {}
 
+    def price_for(self, guild_id, key):
+        base = self.SHOP_PRICES.get(key, 0)
+        mult = float(get_mods(self.bot, guild_id).get("shop_price_mult", 1.0))
+        return int(round(base * mult))
+
     def build_shop_embed(self, guild_id, user_id):
         info = self._powerup_info()
         lines = []
         for key, price in self.SHOP_PRICES.items():
+            price = self.price_for(guild_id, key)
             p = info.get(key)
             name = p["name"] if p else key
             desc = p["desc"] if p else "?"
@@ -318,6 +327,10 @@ class ShopCog(commands.Cog):
 
         guild_id = interaction.guild.id
         user_id = interaction.user.id
+
+        if not get_mods(self.bot, guild_id).get("powerups", True):
+            await interaction.followup.send("❌ Powerups are disabled in this server.", ephemeral=True)
+            return
 
         view = ShopCartView(self.bot, self, guild_id, user_id)
         msg = await interaction.followup.send(embed=self.build_shop_embed(guild_id, user_id), view=view)

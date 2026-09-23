@@ -5,6 +5,8 @@ import time
 import discord
 from discord.ext import commands
 
+from mods import get_mods
+
 
 class PowerupsCog(commands.Cog):
     POWERUPS = {
@@ -66,7 +68,9 @@ class PowerupsCog(commands.Cog):
         double_chance = 0.0
         double_icon = ""
         if entry.get("double_catch", 0) > 0:
-            double_chance = 0.20
+            mods = get_mods(self.bot, guild_id)
+            double_chance = 0.20 * mods["luck_global"] * mods["luck_double"]
+            double_chance = min(double_chance, 1.0)
             double_icon = "🍀"
             entry["double_catch"] -= 1
             if entry.get("double_catch", 0) <= 0:
@@ -210,6 +214,11 @@ class PowerupsCog(commands.Cog):
 
             guild_id = interaction.guild.id
             user_id = interaction.user.id
+
+            if not get_mods(self.bot, guild_id).get("powerups", True):
+                await interaction.followup.send("❌ Powerups are disabled in this server.", ephemeral=True)
+                return
+
             info = self.POWERUPS.get(powerup)
             if not info:
                 await interaction.followup.send("❌ Unknown powerup!", ephemeral=True)
@@ -275,7 +284,9 @@ class PowerupsCog(commands.Cog):
                 desc = f"📉 **{interaction.user.mention}** demotivated **{member.mention}**! Half BirdPass XP for their next 3 catches."
 
             elif powerup == "sab_steal":
-                success = random.random() < 0.5
+                mods = get_mods(self.bot, guild_id)
+                steal_chance = min(0.5 * mods["luck_global"] * mods["luck_double"], 1.0)
+                success = random.random() < steal_chance
                 if not success:
                     embed = discord.Embed(
                         title="🕵️ Pickpocket Failed!",
@@ -309,7 +320,9 @@ class PowerupsCog(commands.Cog):
                 desc = f"🧹 **{interaction.user.mention}** set up a Scarecrow! The next sabotage aimed at them will be blocked."
 
             elif powerup == "bird_whistle":
-                if random.random() < 0.7:
+                mods = get_mods(self.bot, guild_id)
+                whistle_chance = min(0.7 * mods["luck_global"] * mods["luck_double"], 1.0)
+                if random.random() < whistle_chance:
                     await asyncio.sleep(random.randint(3, 10))
                     core_cog = self.bot.get_cog("CoreCog")
                     ok = False

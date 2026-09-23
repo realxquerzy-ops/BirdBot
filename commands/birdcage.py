@@ -5,6 +5,8 @@ from collections import Counter
 import discord
 from discord.ext import commands, tasks
 
+from mods import get_mods
+
 CAGE_CAPACITY = {1: 3, 2: 5, 3: 8, 4: 12, 5: 16, 6: 24, 7: 32, 8: 42, 9: 55, 10: 70, 11: 90, 12: 115, 13: 145, 14: 180, 15: 220}
 UPGRADE_COST = {1: 50, 2: 150, 3: 400, 4: 1000, 5: 2000, 6: 4000, 7: 7500, 8: 13000, 9: 21000, 10: 32000, 11: 47000, 12: 66000, 13: 90000, 14: 120000}
 MAX_LEVEL = 15
@@ -304,12 +306,15 @@ class BirdCageCog(commands.Cog):
             try:
                 if not cage["birds"]:
                     continue
+                mods = get_mods(self.bot, cage["guild_id"])
+                divisor = max(1.0, float(mods.get("cage_income_divisor", 50.0)))
+                interval = max(1, int(mods.get("cage_interval_sec", 60)))
                 total_value = sum(self.bot.bird_values.get(name, 1) for name in cage["birds"])
-                income_per_min = total_value / 50.0
+                income_per_tick = total_value / divisor * (60.0 / interval)
                 limit = INCOME_CAP.get(cage["level"], INCOME_CAP[MAX_LEVEL])
                 if cage["accumulated"] >= limit:
                     continue
-                cage["accumulated"] = min(cage["accumulated"] + income_per_min, limit)
+                cage["accumulated"] = min(cage["accumulated"] + income_per_tick, limit)
                 self.bot.db.save_birdcage(
                     cage["guild_id"], cage["user_id"],
                     cage["birds"], cage["level"], cage["accumulated"],

@@ -2,14 +2,13 @@ import logging
 import os
 import random
 import sys
-import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import discord
 from discord.ext import commands
 
 from db import Database
+from web_server import start_server
 
 logging.basicConfig(
     level=logging.INFO,
@@ -165,6 +164,19 @@ db.execute('''CREATE TABLE IF NOT EXISTS battle_log (
     created_at TIMESTAMP DEFAULT NOW()
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS server_mods (
+    guild_id BIGINT PRIMARY KEY,
+    mods TEXT NOT NULL DEFAULT '{}'
+)''')
+
+db.execute('''CREATE TABLE IF NOT EXISTS web_sessions (
+    token TEXT PRIMARY KEY,
+    user_id TEXT,
+    username TEXT,
+    manageable TEXT NOT NULL DEFAULT '{}',
+    expires BIGINT NOT NULL
+)''')
+
 # Sorgu hızı için indeksler
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_guild ON inventories (guild_id)")
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_user ON inventories (user_id)")
@@ -305,6 +317,7 @@ async def on_ready():
         logging.info("[achievements] BirdBot'a %s başarım eklendi (%s sunucu).", len(all_ach), len(bot.guilds))
 
     bot.loop.create_task(_self_ping_loop())
+    bot._api_loop = bot.loop
 
 bot.birds = BIRDS
 bot.bird_values = BIRD_VALUES
@@ -314,6 +327,10 @@ bot.resource_guild_ids = RESOURCE_GUILD_IDS
 bot.spawn_states = {}
 bot.server_settings = db.get_server_settings()
 bot.db = db
+bot.mods_cache = db.get_all_server_mods()
+
+import web_server as web_module
+web_module.BOT = bot
 
 async def _tree_interaction_check(interaction):
     user = interaction.user
@@ -332,29 +349,6 @@ async def _tree_interaction_check(interaction):
     return True
 
 bot.tree.interaction_check = _tree_interaction_check
-
-
-class _HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"ok")
-
-    def do_HEAD(self):
-        self.send_response(200)
-        self.end_headers()
-
-    def log_message(self, *args):
-        pass
-
-
-def _start_health_server():
-    port = int(os.getenv("PORT", "8080"))
-    server = ThreadingHTTPServer(("0.0.0.0", port), _HealthHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    logging.info("[health] Listening on :%s", port)
 
 
 def _get_public_url():
@@ -380,7 +374,7 @@ async def _self_ping_loop():
         await _asyncio.sleep(300)
 
 
-_start_health_server()
+start_server()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
