@@ -22,6 +22,8 @@ STATES = {}
 STATE_TTL = 600
 
 INDEX_FILE = Path(__file__).resolve().parent / "web" / "index.html"
+TOS_FILE = Path(__file__).resolve().parent / "web" / "tos.html"
+PRIVACY_FILE = Path(__file__).resolve().parent / "web" / "privacy.html"
 
 DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
@@ -271,6 +273,20 @@ a{{color:#8ab4ff;text-decoration:none}}
                 data = INDEX_FILE.read_bytes()
             except OSError:
                 self._json(500, {"ok": False, "error": "index.html not found"})
+                return
+            self._send(200, data)
+        elif path in ("/tos", "/terms", "/terms-of-service"):
+            try:
+                data = TOS_FILE.read_bytes()
+            except OSError:
+                self._json(500, {"ok": False, "error": "tos.html not found"})
+                return
+            self._send(200, data)
+        elif path in ("/privacy", "/privacy-policy", "/privacy-policy.html"):
+            try:
+                data = PRIVACY_FILE.read_bytes()
+            except OSError:
+                self._json(500, {"ok": False, "error": "privacy.html not found"})
                 return
             self._send(200, data)
         elif path == "/health":
