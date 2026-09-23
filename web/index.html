@@ -306,7 +306,7 @@ function giveUserInput() {
 }
 
 async function grant(payload) {
-  await api("/api/grant", {
+  return await api("/api/grant", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ guild: state.guild.id, data: payload }),
