@@ -53,8 +53,8 @@
           border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-top: 14px; line-height: 1.5; }
   .okbox { background: #243a2c; border: 1px solid #2f6b4a; color: #a7e8b8;
           border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-top: 14px; line-height: 1.5; }
-  details { margin-top: 12px; }
-  summary { cursor: pointer; color: #8ab4ff; font-size: 13px; }
+  .group { font-size: 15px; font-weight: 600; margin: 22px 0 4px; color: #8ab4ff;
+           border-top: 1px solid #2f3144; padding-top: 16px; }
 </style>
 </head>
 <body>
@@ -84,70 +84,54 @@
       <h2>Server Modifiers</h2>
       <p class="hint">Change how BirdBot behaves in this specific server. Any custom setting removes this server (and its birds) from the global <code>/glb</code> leaderboard to keep things fair.</p>
 
-      <Details>
-        <summary>Bird Spawn Time (seconds between spawns)</summary>
-        <div class="grid2">
-          <div class="row"><label>Minimum spawn delay</label><input type="number" id="m_spawn_min_sec" min="1" max="86400"></div>
-          <div class="row"><label>Maximum spawn delay</label><input type="number" id="m_spawn_max_sec" min="1" max="86400"></div>
-        </div>
-      </Details>
+      <h3 class="group">Bird Spawn Time (seconds between spawns)</h3>
+      <div class="grid2">
+        <div class="row"><label>Minimum spawn delay</label><input type="number" id="m_spawn_min_sec" min="1" max="86400"></div>
+        <div class="row"><label>Maximum spawn delay</label><input type="number" id="m_spawn_max_sec" min="1" max="86400"></div>
+      </div>
 
-      <Details>
-        <summary>Trade</summary>
-        <div class="grid2">
-          <div class="row"><label>Trade timeout (seconds)</label><input type="number" id="m_trade_timeout_sec" min="5" max="3600"></div>
-          <div class="row"><label>Trading enabled</label><span class="switch"><input type="checkbox" id="m_trading"><span class="slider"></span></span></div>
-        </div>
-      </Details>
+      <h3 class="group">Trade</h3>
+      <div class="grid2">
+        <div class="row"><label>Trade timeout (seconds)</label><input type="number" id="m_trade_timeout_sec" min="5" max="3600"></div>
+        <div class="row"><label>Trading enabled</label><span class="switch"><input type="checkbox" id="m_trading"><span class="slider"></span></span></div>
+      </div>
 
-      <Details>
-        <summary>Fights</summary>
-        <div class="row"><label>Fight ignore attack time (seconds)</label><input type="number" id="m_fight_ignore_sec" min="5" max="3600"></div>
-      </Details>
+      <h3 class="group">Fights</h3>
+      <div class="row"><label>Fight ignore attack time (seconds)</label><input type="number" id="m_fight_ignore_sec" min="5" max="3600"></div>
 
-      <Details>
-        <summary>Gambling</summary>
-        <div class="grid2">
-          <div class="row"><label>Gambling enabled</label><span class="switch"><input type="checkbox" id="m_gambling"><span class="slider"></span></span></div>
-          <div class="row"><label>Gamble cooldown (seconds, 0 = none)</label><input type="number" id="m_gamble_cd_sec" min="0" max="86400"></div>
-        </div>
-      </Details>
+      <h3 class="group">Gambling</h3>
+      <div class="grid2">
+        <div class="row"><label>Gambling enabled</label><span class="switch"><input type="checkbox" id="m_gambling"><span class="slider"></span></span></div>
+        <div class="row"><label>Gamble cooldown (seconds, 0 = none)</label><input type="number" id="m_gamble_cd_sec" min="0" max="86400"></div>
+      </div>
 
-      <Details>
-        <summary>Powerups</summary>
-        <div class="grid2">
-          <div class="row"><label>Powerups enabled</label><span class="switch"><input type="checkbox" id="m_powerups"><span class="slider"></span></span></div>
-          <div class="row"><label>Shop price multiplier (x)</label><input type="number" id="m_shop_price_mult" min="0.05" max="100" step="0.05"></div>
-        </div>
-      </Details>
+      <h3 class="group">Powerups</h3>
+      <div class="grid2">
+        <div class="row"><label>Powerups enabled</label><span class="switch"><input type="checkbox" id="m_powerups"><span class="slider"></span></span></div>
+        <div class="row"><label>Shop price multiplier (x)</label><input type="number" id="m_shop_price_mult" min="0.05" max="100" step="0.05"></div>
+      </div>
 
-      <Details>
-        <summary>Bird Cage</summary>
-        <div class="grid2">
-          <div class="row"><label>Cage income divisor (default 50)</label><input type="number" id="m_cage_income_divisor" min="1" max="1000000000" step="1"></div>
-          <div class="row"><label>Cage income interval (seconds)</label><input type="number" id="m_cage_interval_sec" min="10" max="86400"></div>
-        </div>
-        <p class="muted" style="margin-top:6px">Example: divisor 30 gives more income; interval 120 pays out every 2 minutes.</p>
-      </Details>
+      <h3 class="group">Bird Cage</h3>
+      <div class="grid2">
+        <div class="row"><label>Cage income divisor (default 50)</label><input type="number" id="m_cage_income_divisor" min="1" max="1000000000" step="1"></div>
+        <div class="row"><label>Cage income interval (seconds)</label><input type="number" id="m_cage_interval_sec" min="10" max="86400"></div>
+      </div>
+      <p class="muted" style="margin-top:6px">Example: divisor 30 gives more income; interval 120 pays out every 2 minutes.</p>
 
-      <Details>
-        <summary>Boosting Luck</summary>
-        <p class="muted" style="margin:0 0 6px">1.0 is normal. Higher values make lucky events more likely. Global luck applies to everything; use the individual fields to tune one thing at a time.</p>
-        <div class="grid2">
-          <div class="row"><label>Global luck multiplier</label><input type="number" id="m_luck_global" min="0.1" max="10" step="0.1"></div>
-          <div class="row"><label>Spawn rarity luck</label><input type="number" id="m_luck_spawn" min="0.1" max="10" step="0.1"></div>
-          <div class="row"><label>Gamble win luck</label><input type="number" id="m_luck_gamble" min="0.1" max="10" step="0.1"></div>
-          <div class="row"><label>Double catch luck</label><input type="number" id="m_luck_double" min="0.1" max="10" step="0.1"></div>
-        </div>
-      </Details>
+      <h3 class="group">Boosting Luck</h3>
+      <p class="muted" style="margin:0 0 6px">1.0 is normal. Higher values make lucky events more likely. Global luck applies to everything; use the individual fields to tune one thing at a time.</p>
+      <div class="grid2">
+        <div class="row"><label>Global luck multiplier</label><input type="number" id="m_luck_global" min="0.1" max="10" step="0.1"></div>
+        <div class="row"><label>Spawn rarity luck</label><input type="number" id="m_luck_spawn" min="0.1" max="10" step="0.1"></div>
+        <div class="row"><label>Gamble win luck</label><input type="number" id="m_luck_gamble" min="0.1" max="10" step="0.1"></div>
+        <div class="row"><label>Double catch luck</label><input type="number" id="m_luck_double" min="0.1" max="10" step="0.1"></div>
+      </div>
 
-      <Details>
-        <summary>BirdPass</summary>
-        <div class="grid2">
-          <div class="row"><label>XP booster (x)</label><input type="number" id="m_birdpass_xp_mult" min="0.1" max="100" step="0.1"></div>
-          <div class="row"><label>Reward buff (x)</label><input type="number" id="m_birdpass_reward_mult" min="0.1" max="100" step="0.1"></div>
-        </div>
-      </Details>
+      <h3 class="group">BirdPass</h3>
+      <div class="grid2">
+        <div class="row"><label>XP booster (x)</label><input type="number" id="m_birdpass_xp_mult" min="0.1" max="100" step="0.1"></div>
+        <div class="row"><label>Reward buff (x)</label><input type="number" id="m_birdpass_reward_mult" min="0.1" max="100" step="0.1"></div>
+      </div>
 
       <div class="actions">
         <button class="btn primary" id="saveBtn">Save changes</button>
