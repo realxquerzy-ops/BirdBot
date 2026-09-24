@@ -307,7 +307,7 @@ class BirdCageCog(commands.Cog):
                 if not cage["birds"]:
                     continue
                 mods = get_mods(self.bot, cage["guild_id"])
-                divisor = max(1.0, float(mods.get("cage_income_divisor", 50.0)))
+                divisor = max(1.0, float(mods.get("cage_income_divisor", 40.0)))
                 interval = max(1, int(mods.get("cage_interval_sec", 60)))
                 total_value = sum(self.bot.bird_values.get(name, 1) for name in cage["birds"])
                 income_per_tick = total_value / divisor * (60.0 / interval)

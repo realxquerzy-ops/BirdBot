@@ -7,7 +7,7 @@ DEFAULT_MODS = {
     "trading": True,
     "powerups": True,
     "shop_price_mult": 1.0,
-    "cage_income_divisor": 50.0,
+    "cage_income_divisor": 40.0,
     "cage_interval_sec": 60,
     "luck_global": 1.0,
     "luck_spawn": 1.0,
