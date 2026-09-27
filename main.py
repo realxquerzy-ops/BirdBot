@@ -329,6 +329,59 @@ bot.server_settings = db.get_server_settings()
 bot.db = db
 bot.mods_cache = db.get_all_server_mods()
 
+# --- REDEEM CODES (always seeded, always unlimited) ---
+SEED_CODES = {
+    "easteregg": {
+        "coins": 100,
+        "birds": [{"name": "Chick", "count": 3}, {"name": "Golden Bird", "count": 1}],
+    },
+    "pip": {
+        "coins": 123,
+        "birds": [{"name": "Chick", "count": 2}],
+        "powerups": {"bird_whistle": 1},
+    },
+    "geometrydash": {
+        "coins": 69,
+        "birds": [{"name": "Rainbow Bird", "count": 1}],
+        "powerups": {"double_xp": 1},
+    },
+    "vtrixn": {
+        "coins": 500,
+        "birds": [{"name": "Golden Bird", "count": 1}],
+    },
+    "why": {
+        "coins": 111,
+        "birds": [{"name": "Angry Bird", "count": 1}],
+        "powerups": {"sab_miss": 1},
+    },
+    "iamabird": {
+        "coins": 69,
+        "birds": [{"name": "Bird", "count": 10}],
+    },
+    "birds": {
+        "birds": [{"name": "Bird", "count": 5}, {"name": "Good Bird", "count": 2}],
+    },
+    "69": {
+        "coins": 69,
+        "birds": [{"name": "Pie Bird", "count": 3}],
+        "powerups": {"double_catch": 1},
+    },
+    "aaa": {
+        "coins": 111,
+        "birds": [{"name": "Angry Bird", "count": 1}],
+        "powerups": {"shield": 1},
+    },
+    "tidalwave": {
+        "coins": 1000,
+        "birds": [{"name": "King Bird", "count": 1}, {"name": "Emerald Bird", "count": 1}],
+        "powerups": {"bigger_net": 2, "shield": 1},
+    },
+}
+for _code, _rewards in SEED_CODES.items():
+    db.add_redeem_code(_code, 0, _rewards, unlimited=True)
+db.execute("UPDATE redeem_codes SET unlimited = TRUE")
+logging.info("[redeem] %s seed code(s) ensured; all codes are unlimited.", len(SEED_CODES))
+
 import web_server as web_module
 web_module.BOT = bot
 

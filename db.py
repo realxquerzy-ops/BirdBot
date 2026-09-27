@@ -409,7 +409,7 @@ class Database:
         )
         return rows
 
-    def add_redeem_code(self, code, uses_left, rewards, unlimited=False):
+    def add_redeem_code(self, code, uses_left, rewards, unlimited=True):
         self.execute(
             """
             INSERT INTO redeem_codes (code, uses_left, rewards, unlimited) VALUES (%s, %s, %s, %s)
