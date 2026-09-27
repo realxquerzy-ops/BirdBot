@@ -365,11 +365,30 @@ class Database:
             )
         return rows
 
-    def remove_birdcoin(self, guild_id, user_id, amount):
-        self.execute(
-            "UPDATE birdcoin SET balance = GREATEST(balance - %s, 0) WHERE guild_id = %s AND user_id = %s",
-            (amount, guild_id, user_id),
-        )
+    def spend_birdcoin(self, guild_id, user_id, amount):
+        """Atomically deduct BirdCoin, refusing overdrafts. Returns success."""
+        amount = max(0.0, float(amount or 0))
+        if amount <= 0:
+            return True
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                coins = self._lock_coins(cur, guild_id, [user_id])
+                if coins[user_id] < amount:
+                    conn.rollback()
+                    return False
+                coins[user_id] -= amount
+                cur.execute(
+                    "UPDATE birdcoin SET balance = %s WHERE guild_id = %s AND user_id = %s",
+                    (coins[user_id], guild_id, user_id),
+                )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
 
     # --- Atomic economy helpers (SELECT ... FOR UPDATE transactions) ---
     # These serialize every read-modify-write on inventories / birdcoin so
@@ -597,6 +616,49 @@ class Database:
             (int(guild_id), int(boosts)),
         )
 
+    def increment_guild_boost(self, guild_id, user_id, max_level=20):
+        """Atomically buy one boost level from a payer. Returns (ok, cost, new_level)."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                gid = int(guild_id)
+                uid = int(user_id)
+                cur.execute(
+                    "INSERT INTO guild_boosts (guild_id, boosts) VALUES (%s, 0) "
+                    "ON CONFLICT (guild_id) DO UPDATE SET boosts = guild_boosts.boosts",
+                    (gid,),
+                )
+                cur.execute(
+                    "SELECT boosts FROM guild_boosts WHERE guild_id = %s FOR UPDATE",
+                    (gid,),
+                )
+                row = cur.fetchone()
+                current = int(row[0]) if row and row[0] is not None else 0
+                if current >= max_level:
+                    conn.rollback()
+                    return False, 0, current
+                cost = (current + 1) * 1000
+                coins = self._lock_coins(cur, gid, [uid])
+                if coins[uid] < cost:
+                    conn.rollback()
+                    return False, cost, current
+                coins[uid] -= cost
+                cur.execute(
+                    "UPDATE birdcoin SET balance = %s WHERE guild_id = %s AND user_id = %s",
+                    (coins[uid], gid, uid),
+                )
+                cur.execute(
+                    "UPDATE guild_boosts SET boosts = %s WHERE guild_id = %s",
+                    (current + 1, gid),
+                )
+            conn.commit()
+            return True, cost, current + 1
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
     def log_battle(self, guild_id, attacker_id, defender_id, winner_id, attacker_birds, defender_birds, stolen_birds):
         self.execute(
             """
@@ -803,21 +865,24 @@ class Database:
             result[int(g)] = val
         return result
 
-    def save_web_session(self, token, user_id, username, manageable, expires, refresh_token=None):
+    def save_web_session(self, token, user_id, username, manageable, expires, refresh_token=None, last_valid=None):
         if refresh_token is None:
             refresh_token = ""
+        if last_valid is None:
+            last_valid = 0
         self.execute(
-            "INSERT INTO web_sessions (token, user_id, username, manageable, expires, refresh_token) "
-            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "INSERT INTO web_sessions (token, user_id, username, manageable, expires, refresh_token, last_valid) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, "
             "username = EXCLUDED.username, manageable = EXCLUDED.manageable, "
-            "expires = EXCLUDED.expires, refresh_token = EXCLUDED.refresh_token",
-            (token, user_id, username, json.dumps(manageable), int(expires), refresh_token),
+            "expires = EXCLUDED.expires, refresh_token = EXCLUDED.refresh_token, "
+            "last_valid = EXCLUDED.last_valid",
+            (token, user_id, username, json.dumps(manageable), int(expires), refresh_token, int(last_valid)),
         )
 
     def get_web_session(self, token):
         row = self.fetchone(
-            "SELECT user_id, username, manageable, expires, refresh_token FROM web_sessions WHERE token = %s",
+            "SELECT user_id, username, manageable, expires, refresh_token, last_valid FROM web_sessions WHERE token = %s",
             (token,),
         )
         if not row:
@@ -827,6 +892,7 @@ class Database:
             "manageable": json.loads(row[2] or "{}"),
             "exp": float(row[3]),
             "refresh": row[4] or None,
+            "last_valid": float(row[5] or 0),
         }
 
     def delete_web_session(self, token):

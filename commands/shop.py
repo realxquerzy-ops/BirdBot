@@ -59,19 +59,17 @@ class ShopCartView(discord.ui.View):
 
         await interaction.response.defer(ephemeral=True)
 
-        balance = self.bot.db.get_birdcoin(self.guild_id, self.user_id)
-        if balance < price:
+        if not self.bot.db.spend_birdcoin(self.guild_id, self.user_id, price):
             games_cog = self.bot.get_cog("GamesCog")
             if games_cog:
                 await games_cog.unlock_achievement(self.user_id, "shop_broke", interaction.channel, guild_id=self.guild_id)
             await interaction.followup.send(
-                f"❌ Not enough BirdCoin! Need 🪙`{self.cog.fmt_coin(price)}`, you have 🪙`{self.cog.fmt_coin(balance)}`.",
+                f"❌ Not enough BirdCoin! Need 🪙`{self.cog.fmt_coin(price)}`, you have 🪙`{self.cog.fmt_coin(self.bot.db.get_birdcoin(self.guild_id, self.user_id))}`.",
                 ephemeral=True
             )
             await self._refresh()
             return
 
-        self.bot.db.remove_birdcoin(self.guild_id, self.user_id, price)
         self.bot.db.add_powerup(self.guild_id, self.user_id, key, 1)
         new_balance = self.bot.db.get_birdcoin(self.guild_id, self.user_id)
 

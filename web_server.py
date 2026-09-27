@@ -20,6 +20,7 @@ BOT = None
 SESSIONS = {}
 SESSION_TTL = 7 * 24 * 3600
 SESSION_STALE = 6 * 3600
+REVALIDATE_INTERVAL = 1800
 SESSION_BODY_MAX = 1 << 20
 STATES = {}
 STATE_TTL = 600
@@ -143,6 +144,7 @@ def _new_session(user, manageable, refresh_token=None):
         "manageable": manageable,
         "exp": exp,
         "refresh": refresh_token,
+        "last_valid": int(time.time()),
     }
     SESSIONS[token] = session
     db = getattr(BOT, "db", None)
@@ -155,6 +157,7 @@ def _new_session(user, manageable, refresh_token=None):
                 manageable,
                 exp,
                 refresh_token,
+                session["last_valid"],
             )
         except Exception:
             log.warning("web session persist failed", exc_info=True)
@@ -590,6 +593,7 @@ a{{color:#8ab4ff;text-decoration:none}}
                 "manageable": manageable,
                 "exp": exp,
                 "refresh": new_refresh,
+                "last_valid": int(time.time()),
             }
             SESSIONS[value] = new_session
             db = getattr(BOT, "db", None)
@@ -602,6 +606,7 @@ a{{color:#8ab4ff;text-decoration:none}}
                         manageable,
                         exp,
                         new_refresh,
+                        new_session["last_valid"],
                     )
                 except Exception:
                     log.warning("web session refresh persist failed", exc_info=True)
@@ -634,7 +639,9 @@ a{{color:#8ab4ff;text-decoration:none}}
         if BOT is None or db is None:
             self._json(503, {"ok": False, "error": "Bot is still starting up. Try again in a few seconds."})
             return
-        if time.time() > session["exp"] - SESSION_STALE:
+        now = time.time()
+        last_valid = float(session.get("last_valid") or 0)
+        if now - last_valid > REVALIDATE_INTERVAL or now > session["exp"] - SESSION_STALE:
             session = self._refresh_long_lived(self._cookie_token(), session)
             if session is None:
                 self._json(401, {"ok": False, "error": "not_authed"})

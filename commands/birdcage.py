@@ -236,14 +236,12 @@ class CageView(discord.ui.View):
             return
 
         cost = UPGRADE_COST.get(cage["level"], 99999)
-        balance = self.bot.db.get_birdcoin(self.guild_id, self.user_id) or 0
-        if balance < cost:
+        if not self.bot.db.spend_birdcoin(self.guild_id, self.user_id, cost):
             await interaction.response.send_message(
-                f"❌ Need **{cost} BirdCoin** but you have `{balance:.0f}`.", ephemeral=True,
+                f"❌ Need **{cost} BirdCoin** but you have `{self.bot.db.get_birdcoin(self.guild_id, self.user_id) or 0:.0f}`.", ephemeral=True,
             )
             return
 
-        self.bot.db.remove_birdcoin(self.guild_id, self.user_id, cost)
         new_level = cage["level"] + 1
         self.bot.db.save_birdcage(self.guild_id, self.user_id, cage["birds"], new_level, cage["accumulated"])
 

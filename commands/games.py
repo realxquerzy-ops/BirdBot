@@ -26,27 +26,21 @@ class BoostView(discord.ui.View):
     async def boost_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
 
-        current = self.cog.bot.db.get_guild_boost(self.guild_id)
-        if current >= 20:
-            await interaction.followup.send("❌ This server is already at max boost (20/20)!", ephemeral=True)
+        ok, cost, new = self.cog.bot.db.increment_guild_boost(self.guild_id, interaction.user.id)
+        if not ok:
+            if new >= 20:
+                await interaction.followup.send("❌ This server is already at max boost (20/20)!", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ Not enough BirdCoin to boost this server!", ephemeral=True)
             return
 
-        cost = (current + 1) * 1000
         balance = self.cog.bot.db.get_birdcoin(self.guild_id, interaction.user.id)
-        if balance < cost:
-            await interaction.followup.send("❌ Not enough BirdCoin to boost this server!", ephemeral=True)
-            return
-
-        self.cog.bot.db.remove_birdcoin(self.guild_id, interaction.user.id, cost)
-        self.cog.bot.db.set_guild_boost(self.guild_id, current + 1)
-        new = current + 1
-
         if new >= 20:
             button.disabled = True
             button.label = "⚡ Max boost reached"
         else:
             button.label = f"⚡ Boost — {(new + 1) * 1000:,} BirdCoin"
-        embed = self.cog.build_boost_embed(self.guild_name, new, balance - cost)
+        embed = self.cog.build_boost_embed(self.guild_name, new, balance)
         await interaction.edit_original_response(content=None, embed=embed, view=self)
 
 
@@ -831,25 +825,15 @@ class GamesCog(commands.Cog):
             if len(receiver_birds) == 0:
                 await self.unlock_achievement(sender_id, "nice_guy", interaction.channel, guild_id)
 
-            sender_birds = self.bot.db.get_inventory(guild_id, sender_id)
-            current_count = sender_birds.count(matched_bird_name)
-
-            if current_count < number:
-                await interaction.followup.send(f"❌ You don't have enough **{matched_bird_name}**! You have `{current_count}`.", ephemeral=True)
+            moved = self.bot.db.transfer_birds(
+                guild_id, sender_id, receiver_id, [matched_bird_name] * number
+            )
+            if len(moved) < number:
+                await interaction.followup.send(
+                    f"❌ You don't have enough **{matched_bird_name}**! You had `{len(moved)}` available.",
+                    ephemeral=True,
+                )
                 return
-
-            remaining = []
-            removed = 0
-            for bird in sender_birds:
-                if bird == matched_bird_name and removed < number:
-                    removed += 1
-                else:
-                    remaining.append(bird)
-            sender_birds = remaining
-            self.bot.db.save_inventory(guild_id, sender_id, sender_birds)
-
-            receiver_birds.extend([matched_bird_name] * number)
-            self.bot.db.save_inventory(guild_id, receiver_id, receiver_birds)
 
             self.check_stat_achievements(member.id, interaction.guild.id, interaction.channel)
 

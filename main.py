@@ -175,11 +175,17 @@ db.execute('''CREATE TABLE IF NOT EXISTS web_sessions (
     username TEXT,
     manageable TEXT NOT NULL DEFAULT '{}',
     refresh_token TEXT NOT NULL DEFAULT '',
+    last_valid BIGINT NOT NULL DEFAULT 0,
     expires BIGINT NOT NULL
 )''')
 
 try:
     db.execute("ALTER TABLE web_sessions ADD COLUMN IF NOT EXISTS refresh_token TEXT NOT NULL DEFAULT ''")
+except Exception:
+    pass
+
+try:
+    db.execute("ALTER TABLE web_sessions ADD COLUMN IF NOT EXISTS last_valid BIGINT NOT NULL DEFAULT 0")
 except Exception:
     pass
 
