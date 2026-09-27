@@ -313,49 +313,22 @@ class TradeConfirmView(discord.ui.View):
             init_id = self.initiator.id
             target_id = self.target.id
 
-            init_user_birds = self.bot.db.get_inventory(guild_id_int, init_id)
-            target_user_birds = self.bot.db.get_inventory(guild_id_int, target_id)
+            init_coins = int(self.offer_coins.get(init_id, 0) or 0)
+            target_coins = int(self.offer_coins.get(target_id, 0) or 0)
+            init_birds = {b: int(c) for b, c in self.offers.get(init_id, {}).items()}
+            target_birds = {b: int(c) for b, c in self.offers.get(target_id, {}).items()}
 
-            can_trade = True
-            for bird, count in self.offers[init_id].items():
-                if init_user_birds.count(bird) < count:
-                    can_trade = False
-                    break
-            for bird, count in self.offers[target_id].items():
-                if target_user_birds.count(bird) < count:
-                    can_trade = False
-                    break
-
-            init_coins = self.offer_coins.get(init_id, 0)
-            target_coins = self.offer_coins.get(target_id, 0)
-            if init_coins > self.bot.db.get_birdcoin(guild_id_int, init_id):
-                can_trade = False
-            if target_coins > self.bot.db.get_birdcoin(guild_id_int, target_id):
-                can_trade = False
-
-            if not can_trade:
-                await interaction.followup.send("❌ Trade failed! One of the users no longer has enough birds or BirdCoin.", ephemeral=True)
+            ok, reason = self.bot.db.trade(
+                guild_id_int, init_id, target_id,
+                init_coins, init_birds,
+                target_coins, target_birds,
+            )
+            if not ok:
+                await interaction.followup.send(
+                    f"❌ Trade failed! {reason or 'One of the users no longer has enough birds or BirdCoin.'}",
+                    ephemeral=True,
+                )
                 return
-
-            for bird, count in self.offers[init_id].items():
-                for _ in range(count):
-                    init_user_birds.remove(bird)
-                    target_user_birds.append(bird)
-
-            for bird, count in self.offers[target_id].items():
-                for _ in range(count):
-                    target_user_birds.remove(bird)
-                    init_user_birds.append(bird)
-
-            if init_coins > 0:
-                self.bot.db.remove_birdcoin(guild_id_int, init_id, init_coins)
-                self.bot.db.add_birdcoin(guild_id_int, target_id, init_coins)
-            if target_coins > 0:
-                self.bot.db.remove_birdcoin(guild_id_int, target_id, target_coins)
-                self.bot.db.add_birdcoin(guild_id_int, init_id, target_coins)
-
-            self.bot.db.save_inventory(guild_id_int, init_id, init_user_birds)
-            self.bot.db.save_inventory(guild_id_int, target_id, target_user_birds)
 
             await self.unlock_achievement(self.initiator.id, "a_trade", interaction.channel)
             await self.unlock_achievement(self.target.id, "a_trade", interaction.channel)

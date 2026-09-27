@@ -371,6 +371,216 @@ class Database:
             (amount, guild_id, user_id),
         )
 
+    # --- Atomic economy helpers (SELECT ... FOR UPDATE transactions) ---
+    # These serialize every read-modify-write on inventories / birdcoin so
+    # concurrent commands cannot duplicate coins or birds.
+
+    def _lock_inventories(self, cur, guild_id, user_ids):
+        users = sorted({int(u) for u in user_ids})
+        birds = {}
+        for uid in users:
+            cur.execute(
+                "INSERT INTO inventories (guild_id, user_id, birds) VALUES (%s, %s, '[]') "
+                "ON CONFLICT (guild_id, user_id) DO UPDATE SET birds = inventories.birds",
+                (guild_id, uid),
+            )
+            cur.execute(
+                "SELECT birds FROM inventories WHERE guild_id = %s AND user_id = %s FOR UPDATE",
+                (guild_id, uid),
+            )
+            row = cur.fetchone()
+            birds[uid] = self._loads_json(row[0]) if row else []
+        return birds
+
+    def _lock_coins(self, cur, guild_id, user_ids):
+        users = sorted({int(u) for u in user_ids})
+        coins = {}
+        for uid in users:
+            cur.execute(
+                "INSERT INTO birdcoin (guild_id, user_id, balance) VALUES (%s, %s, 0) "
+                "ON CONFLICT (guild_id, user_id) DO UPDATE SET balance = birdcoin.balance",
+                (guild_id, uid),
+            )
+            cur.execute(
+                "SELECT balance FROM birdcoin WHERE guild_id = %s AND user_id = %s FOR UPDATE",
+                (guild_id, uid),
+            )
+            row = cur.fetchone()
+            coins[uid] = float(row[0]) if row and row[0] is not None else 0.0
+        return coins
+
+    def sell_birds(self, guild_id, user_id, canon, n):
+        """Atomically sell up to n birds of `canon`. Returns (sold, remaining_after)."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                birds = self._lock_inventories(cur, guild_id, [user_id])[user_id]
+                counts = {}
+                for b in birds:
+                    counts[b] = counts.get(b, 0) + 1
+                owned = counts.get(canon, 0)
+                n = max(0, min(int(n) if n is not None else 0, owned))
+                if n == 0:
+                    conn.rollback()
+                    return 0, owned
+                new_list = []
+                removed = 0
+                for b in birds:
+                    if b == canon and removed < n:
+                        removed += 1
+                    else:
+                        new_list.append(b)
+                cur.execute(
+                    "UPDATE inventories SET birds = %s WHERE guild_id = %s AND user_id = %s",
+                    (json.dumps(new_list), guild_id, user_id),
+                )
+            conn.commit()
+            return removed, owned - removed
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
+    def transfer_birds(self, guild_id, from_user, to_user, birds_list):
+        """Atomically move birds from one inventory to another. Returns the birds moved."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                birds = self._lock_inventories(cur, guild_id, [from_user, to_user])
+                moved = []
+                for b in birds_list or []:
+                    if b in birds[from_user]:
+                        birds[from_user].remove(b)
+                        birds[to_user].append(b)
+                        moved.append(b)
+                if moved:
+                    for uid in (from_user, to_user):
+                        cur.execute(
+                            "UPDATE inventories SET birds = %s WHERE guild_id = %s AND user_id = %s",
+                            (json.dumps(birds[uid]), guild_id, uid),
+                        )
+            conn.commit()
+            return moved
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
+    def deduct_birds(self, guild_id, user_id, birds_list):
+        """Atomically remove birds from an inventory. Returns the birds removed."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                birds = self._lock_inventories(cur, guild_id, [user_id])
+                removed = []
+                for b in birds_list or []:
+                    if b in birds[user_id]:
+                        birds[user_id].remove(b)
+                        removed.append(b)
+                if removed:
+                    cur.execute(
+                        "UPDATE inventories SET birds = %s WHERE guild_id = %s AND user_id = %s",
+                        (json.dumps(birds[user_id]), guild_id, user_id),
+                    )
+            conn.commit()
+            return removed
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
+    def transfer_coins(self, guild_id, from_user, to_user, amount):
+        """Atomically move BirdCoin between users. Refuses overdrafts. Returns success."""
+        amount = max(0.0, float(amount or 0))
+        if amount <= 0:
+            return False
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                coins = self._lock_coins(cur, guild_id, [from_user, to_user])
+                if coins[from_user] < amount:
+                    conn.rollback()
+                    return False
+                coins[from_user] -= amount
+                coins[to_user] += amount
+                for uid in (from_user, to_user):
+                    cur.execute(
+                        "UPDATE birdcoin SET balance = %s WHERE guild_id = %s AND user_id = %s",
+                        (coins[uid], guild_id, uid),
+                    )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
+    def trade(self, guild_id, user_a, user_b, coins_a_to_b, birds_a_to_b, coins_b_to_a, birds_b_to_a):
+        """Atomically settle a trade. Returns (ok, reason). Locks rows in ascending user order."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                a, b = int(user_a), int(user_b)
+                birds = self._lock_inventories(cur, guild_id, [a, b])
+                coins = self._lock_coins(cur, guild_id, [a, b])
+                coins_a_to_b = max(0, int(coins_a_to_b or 0))
+                coins_b_to_a = max(0, int(coins_b_to_a or 0))
+                birds_a = {k: int(v) for k, v in (birds_a_to_b or {}).items() if int(v or 0) > 0}
+                birds_b = {k: int(v) for k, v in (birds_b_to_a or {}).items() if int(v or 0) > 0}
+                if coins_a_to_b == 0 and coins_b_to_a == 0 and not birds_a and not birds_b:
+                    conn.rollback()
+                    return False, "Nothing to trade."
+                if coins[a] < coins_a_to_b:
+                    conn.rollback()
+                    return False, "One of the users no longer has enough BirdCoin."
+                if coins[b] < coins_b_to_a:
+                    conn.rollback()
+                    return False, "One of the users no longer has enough BirdCoin."
+                cnt_a = {}
+                for x in birds[a]:
+                    cnt_a[x] = cnt_a.get(x, 0) + 1
+                cnt_b = {}
+                for x in birds[b]:
+                    cnt_b[x] = cnt_b.get(x, 0) + 1
+                for bird, need in birds_a.items():
+                    if cnt_a.get(bird, 0) < need:
+                        conn.rollback()
+                        return False, "One of the users no longer has enough birds."
+                for bird, need in birds_b.items():
+                    if cnt_b.get(bird, 0) < need:
+                        conn.rollback()
+                        return False, "One of the users no longer has enough birds."
+                for bird, need in birds_a.items():
+                    for _ in range(need):
+                        birds[a].remove(bird)
+                        birds[b].append(bird)
+                for bird, need in birds_b.items():
+                    for _ in range(need):
+                        birds[b].remove(bird)
+                        birds[a].append(bird)
+                coins[a] = coins[a] - coins_a_to_b + coins_b_to_a
+                coins[b] = coins[b] - coins_b_to_a + coins_a_to_b
+                for uid in (a, b):
+                    cur.execute(
+                        "UPDATE inventories SET birds = %s WHERE guild_id = %s AND user_id = %s",
+                        (json.dumps(birds[uid]), guild_id, uid),
+                    )
+                    cur.execute(
+                        "UPDATE birdcoin SET balance = %s WHERE guild_id = %s AND user_id = %s",
+                        (coins[uid], guild_id, uid),
+                    )
+            conn.commit()
+            return True, None
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._put_conn(conn)
+
     def get_guild_boost(self, guild_id):
         row = self.fetchone(
             "SELECT boosts FROM guild_boosts WHERE guild_id = %s",
@@ -593,19 +803,21 @@ class Database:
             result[int(g)] = val
         return result
 
-    def save_web_session(self, token, user_id, username, manageable, expires):
+    def save_web_session(self, token, user_id, username, manageable, expires, refresh_token=None):
+        if refresh_token is None:
+            refresh_token = ""
         self.execute(
-            "INSERT INTO web_sessions (token, user_id, username, manageable, expires) "
-            "VALUES (%s, %s, %s, %s, %s) "
+            "INSERT INTO web_sessions (token, user_id, username, manageable, expires, refresh_token) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, "
             "username = EXCLUDED.username, manageable = EXCLUDED.manageable, "
-            "expires = EXCLUDED.expires",
-            (token, user_id, username, json.dumps(manageable), int(expires)),
+            "expires = EXCLUDED.expires, refresh_token = EXCLUDED.refresh_token",
+            (token, user_id, username, json.dumps(manageable), int(expires), refresh_token),
         )
 
     def get_web_session(self, token):
         row = self.fetchone(
-            "SELECT user_id, username, manageable, expires FROM web_sessions WHERE token = %s",
+            "SELECT user_id, username, manageable, expires, refresh_token FROM web_sessions WHERE token = %s",
             (token,),
         )
         if not row:
@@ -614,6 +826,7 @@ class Database:
             "user": {"id": row[0], "username": row[1]},
             "manageable": json.loads(row[2] or "{}"),
             "exp": float(row[3]),
+            "refresh": row[4] or None,
         }
 
     def delete_web_session(self, token):

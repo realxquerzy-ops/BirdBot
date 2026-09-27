@@ -1,5 +1,3 @@
-from collections import Counter
-
 import discord
 from discord.ext import commands
 
@@ -163,15 +161,9 @@ class ShopCog(commands.Cog):
         guild_id = interaction.guild.id
         user_id = interaction.user.id
 
-        inv = self.bot.db.get_inventory(guild_id, user_id)
-        owned = Counter(inv)[canon]
-        if owned <= 0:
-            await interaction.followup.send(f"❌ You don't have **{canon}** to sell!", ephemeral=True)
-            return
-
         count_txt = count.strip().lower()
         if count_txt == "all":
-            n = owned
+            n = 10 ** 9
         else:
             try:
                 n = int(count_txt)
@@ -181,20 +173,20 @@ class ShopCog(commands.Cog):
             if n < 1:
                 await interaction.followup.send("❌ Count must be at least 1!", ephemeral=True)
                 return
-            n = min(n, owned)
 
-        removed = 0
-        new_inv = []
-        for b in inv:
-            if b == canon and removed < n:
-                removed += 1
-            else:
-                new_inv.append(b)
-        self.bot.db.save_inventory(guild_id, user_id, new_inv)
+        try:
+            sold, remaining = self.bot.db.sell_birds(guild_id, user_id, canon, n)
+        except Exception:
+            await interaction.followup.send("❌ Something went wrong while selling. Try again!", ephemeral=True)
+            return
+        if sold <= 0:
+            await interaction.followup.send(f"❌ You don't have **{canon}** to sell!", ephemeral=True)
+            return
+        owned = sold + remaining
 
         base_value = self.bot.bird_values.get(canon, 1)
         value = round(base_value * 1.4, 2)
-        earned = value * n
+        earned = value * sold
         boost = False
         powerups_cog = self.bot.get_cog("PowerupsCog")
         if powerups_cog and powerups_cog.consume_sell_boost(guild_id, user_id):
@@ -207,10 +199,10 @@ class ShopCog(commands.Cog):
         if games_cog:
             await games_cog.unlock_achievement(user_id, "sell_first", interaction.channel, guild_id=guild_id)
 
-        if n == owned:
-            amount_txt = f"all `{n}x`"
+        if remaining == 0:
+            amount_txt = f"all `{sold}x`"
         else:
-            amount_txt = f"`{n}x` (you still have `{owned - n}x`)"
+            amount_txt = f"`{sold}x` (you still have `{remaining}x`)"
         boost_txt = "\n🪙 Golden Gut: **+50%** BirdCoin applied!" if boost else ""
         embed = discord.Embed(
             title="💸 Sale Complete!",
@@ -283,22 +275,24 @@ class ShopCog(commands.Cog):
 
         guild_id = interaction.guild.id
         sender_id = interaction.user.id
-        balance = self.bot.db.get_birdcoin(guild_id, sender_id)
-        if balance < send_amt:
+        try:
+            ok = self.bot.db.transfer_coins(guild_id, sender_id, member.id, send_amt)
+        except Exception:
+            ok = False
+        if not ok:
+            balance = self.bot.db.get_birdcoin(guild_id, sender_id)
             await interaction.followup.send(
                 f"❌ Not enough BirdCoin! You have 🪙`{self.fmt_coin(balance)}`, need 🪙`{self.fmt_coin(send_amt)}`.",
                 ephemeral=True,
             )
             return
-
-        self.bot.db.remove_birdcoin(guild_id, sender_id, send_amt)
-        self.bot.db.add_birdcoin(guild_id, member.id, send_amt)
+        new_balance = self.bot.db.get_birdcoin(guild_id, sender_id)
 
         embed = discord.Embed(
             title="💸 BirdCoin Sent!",
             description=(
                 f"Sent 🪙 **`{self.fmt_coin(send_amt)}`** BirdCoin to **{member.mention}**!\n"
-                f"Your new balance: 🪙 `{self.fmt_coin(balance - send_amt)}`"
+                f"Your new balance: 🪙 `{self.fmt_coin(new_balance)}`"
             ),
             color=discord.Color.brand_green(),
         )

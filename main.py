@@ -174,8 +174,14 @@ db.execute('''CREATE TABLE IF NOT EXISTS web_sessions (
     user_id TEXT,
     username TEXT,
     manageable TEXT NOT NULL DEFAULT '{}',
+    refresh_token TEXT NOT NULL DEFAULT '',
     expires BIGINT NOT NULL
 )''')
+
+try:
+    db.execute("ALTER TABLE web_sessions ADD COLUMN IF NOT EXISTS refresh_token TEXT NOT NULL DEFAULT ''")
+except Exception:
+    pass
 
 # Sorgu hızı için indeksler
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_guild ON inventories (guild_id)")

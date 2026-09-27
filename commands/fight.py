@@ -85,18 +85,7 @@ def _make_fake_interaction(message):
 
 
 def transfer_birds(bot, guild_id, from_user, to_user, birds_list):
-    src = bot.db.get_inventory(guild_id, from_user)
-    dst = bot.db.get_inventory(guild_id, to_user)
-    moved = []
-    for b in birds_list:
-        if b in src:
-            src.remove(b)
-            dst.append(b)
-            moved.append(b)
-    if moved:
-        bot.db.save_inventory(guild_id, from_user, src)
-        bot.db.save_inventory(guild_id, to_user, dst)
-    return moved
+    return bot.db.transfer_birds(guild_id, from_user, to_user, birds_list)
 
 
 def weighted_pick(inventory, k, bot):
@@ -119,15 +108,7 @@ def weighted_pick(inventory, k, bot):
 
 
 def deduct_birds(bot, guild_id, user_id, birds_list):
-    inv = bot.db.get_inventory(guild_id, user_id)
-    removed = []
-    for b in birds_list:
-        if b in inv:
-            inv.remove(b)
-            removed.append(b)
-    if removed:
-        bot.db.save_inventory(guild_id, user_id, inv)
-    return removed
+    return bot.db.deduct_birds(guild_id, user_id, birds_list)
 
 
 def survival_rate(elapsed):

@@ -297,11 +297,16 @@ class PowerupsCog(commands.Cog):
                     return
                 weights = [1.0 / max(self.bot.bird_values.get(b, 1), 0.001) for b in target_inv]
                 idx = random.choices(range(len(target_inv)), weights=weights, k=1)[0]
-                stolen = target_inv.pop(idx)
-                self.bot.db.save_inventory(guild_id, member.id, target_inv)
-                my_inv = self.bot.db.get_inventory(guild_id, user_id)
-                my_inv.append(stolen)
-                self.bot.db.save_inventory(guild_id, user_id, my_inv)
+                stolen_list = self.bot.db.transfer_birds(guild_id, member.id, user_id, [target_inv[idx]])
+                if not stolen_list:
+                    embed = discord.Embed(
+                        title="🕵️ Pickpocket Failed!",
+                        description=f"🕵️ **{interaction.user.mention}** tried to pickpocket **{member.mention}** but nothing was left to steal!",
+                        color=discord.Color.purple()
+                    )
+                    await interaction.followup.send(embed=embed)
+                    return
+                stolen = stolen_list[0]
                 desc = f"🕵️ **{interaction.user.mention}** pickpocketed **{member.mention}** and stole **1x {stolen}**!"
 
             elif powerup == "golden_gut":

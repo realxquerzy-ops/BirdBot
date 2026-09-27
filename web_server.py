@@ -1,12 +1,13 @@
 import asyncio
 
+import hashlib
+import html
 import json
 import logging
 import os
 import secrets
 import threading
 import time
-import traceback
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,8 +19,11 @@ BOT = None
 
 SESSIONS = {}
 SESSION_TTL = 7 * 24 * 3600
+SESSION_STALE = 6 * 3600
+SESSION_BODY_MAX = 1 << 20
 STATES = {}
 STATE_TTL = 600
+REFRESH_LOCKS = {}
 
 INDEX_FILE = Path(__file__).resolve().parent / "web" / "index.html"
 TOS_FILE = Path(__file__).resolve().parent / "web" / "tos.html"
@@ -65,6 +69,27 @@ def _redirect_uri():
     return _env("OAUTH_REDIRECT_URI") or (_base_url() + "/auth/callback")
 
 
+def _token_digest(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _oauth_refresh(refresh_token):
+    body = urllib.parse.urlencode({
+        "client_id": _client_id(),
+        "client_secret": _client_secret(),
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "scope": "identify guilds",
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        DISCORD_TOKEN_URL,
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "birdbot-web/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.load(resp)
+
+
 def _run_on_loop(coro):
     loop = getattr(BOT, "_api_loop", None)
     if loop is None:
@@ -108,23 +133,28 @@ def _extract_manageable(guilds):
     return result
 
 
-def _new_session(user, manageable):
+def _new_session(user, manageable, refresh_token=None):
     token = secrets.token_urlsafe(24)
+    if not refresh_token:
+        refresh_token = secrets.token_urlsafe(32)
+    exp = time.time() + SESSION_TTL
     session = {
         "user": user,
         "manageable": manageable,
-        "exp": time.time() + SESSION_TTL,
+        "exp": exp,
+        "refresh": refresh_token,
     }
     SESSIONS[token] = session
     db = getattr(BOT, "db", None)
     if db is not None:
         try:
             db.save_web_session(
-                token,
+                _token_digest(token),
                 user.get("id"),
                 user.get("username"),
                 manageable,
-                session["exp"],
+                exp,
+                refresh_token,
             )
         except Exception:
             log.warning("web session persist failed", exc_info=True)
@@ -132,7 +162,8 @@ def _new_session(user, manageable):
 
 
 def _cookie(token):
-    return f"birdbot_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}"
+    secure = "Secure; " if _base_url().startswith("https://") else ""
+    return f"birdbot_session={token}; Path=/; HttpOnly; SameSite=Lax; {secure}Max-Age={SESSION_TTL}"
 
 
 def _available_guilds(session):
@@ -162,6 +193,10 @@ def _member_list(guild):
         pass
     members.sort(key=lambda x: x["label"].lower())
     return members
+
+
+async def _member_list_async(guild):
+    return await asyncio.to_thread(_member_list, guild)
 
 
 async def _gather(session, guild_id):
@@ -194,7 +229,7 @@ async def _gather(session, guild_id):
         "mods": mods,
         "modified": is_modified(BOT, gid),
         "birds": sorted(b["name"] for b in getattr(BOT, "birds", [])),
-        "members": _member_list(guild),
+        "members": await _member_list_async(guild),
     }
 
 
@@ -320,32 +355,37 @@ display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0
 padding:28px;max-width:420px;text-align:center}}
 a{{color:#8ab4ff;text-decoration:none}}
 </style></head><body><div class="card">
-<h2>BirdBot Panel</h2><p>{message}</p><p><a href="/">Back home</a></p>
+<h2>BirdBot Panel</h2><p>{html.escape(str(message))}</p><p><a href="/">Back home</a></p>
 </div></body></html>""")
 
-    def _session(self):
+    def _cookie_token(self):
         raw = self.headers.get("Cookie", "")
         for part in raw.split(";"):
             key, _, value = part.strip().partition("=")
-            if key != "birdbot_session":
-                continue
-            session = SESSIONS.get(value)
-            if session and session["exp"] > time.time():
-                return session
-            if session:
-                SESSIONS.pop(value, None)
-            db = getattr(BOT, "db", None)
-            if db is not None:
-                try:
-                    saved = db.get_web_session(value)
-                    if saved and saved["exp"] > time.time():
-                        SESSIONS[value] = saved
-                        return saved
-                    if saved:
-                        db.delete_web_session(value)
-                except Exception:
-                    pass
+            if key == "birdbot_session":
+                return value
+        return None
+
+    def _session(self):
+        value = self._cookie_token()
+        if not value:
             return None
+        session = SESSIONS.get(value)
+        if session and session["exp"] > time.time():
+            return session
+        if session:
+            SESSIONS.pop(value, None)
+        db = getattr(BOT, "db", None)
+        if db is not None:
+            try:
+                saved = db.get_web_session(_token_digest(value))
+                if saved and saved["exp"] > time.time():
+                    SESSIONS[value] = saved
+                    return saved
+                if saved:
+                    db.delete_web_session(_token_digest(value))
+            except Exception:
+                pass
         return None
 
     def do_GET(self):
@@ -400,9 +440,11 @@ a{{color:#8ab4ff;text-decoration:none}}
             length = int(self.headers.get("Content-Length", "0") or 0)
             if length <= 0:
                 return None, "Empty body"
+            if length > SESSION_BODY_MAX:
+                return None, "Request body too large"
             return json.loads(self.rfile.read(length).decode("utf-8")), None
-        except Exception as e:
-            return None, f"Bad request: {e}"
+        except Exception:
+            return None, "Bad request"
 
     def _check_bot_ready(self):
         if BOT is None:
@@ -429,9 +471,9 @@ a{{color:#8ab4ff;text-decoration:none}}
                 self._json(400, result)
                 return
             self._json(200, result)
-        except Exception as e:
-            traceback.print_exc()
-            self._json(500, {"ok": False, "error": str(e)})
+        except Exception:
+            log.error("apply failed", exc_info=True)
+            self._json(500, {"ok": False, "error": "Internal error"})
 
     def _handle_grant(self):
         session = self._session()
@@ -452,9 +494,9 @@ a{{color:#8ab4ff;text-decoration:none}}
                 self._json(400, result)
                 return
             self._json(200, result)
-        except Exception as e:
-            traceback.print_exc()
-            self._json(500, {"ok": False, "error": str(e)})
+        except Exception:
+            log.error("grant failed", exc_info=True)
+            self._json(500, {"ok": False, "error": "Internal error"})
 
     def _handle_login(self):
         cid = _client_id()
@@ -486,12 +528,12 @@ a{{color:#8ab4ff;text-decoration:none}}
             return
         try:
             token = _oauth_exchange(code)
-        except Exception as e:
-            traceback.print_exc()
-            self._error_page(f"Could not complete login: {e}")
+        except Exception:
+            log.error("oauth exchange failed", exc_info=True)
+            self._error_page("Could not complete login with Discord. Please try again.")
             return
         if token.get("error"):
-            self._error_page(f"Discord rejected the login: {token['error']}")
+            self._error_page("Discord rejected the login. Please try again.")
             return
         access = token.get("access_token")
         try:
@@ -503,9 +545,9 @@ a{{color:#8ab4ff;text-decoration:none}}
             if status != 200:
                 self._error_page("Could not load your servers from Discord.")
                 return
-        except Exception as e:
-            traceback.print_exc()
-            self._error_page(f"Could not reach Discord: {e}")
+        except Exception:
+            log.error("discord api failed during login", exc_info=True)
+            self._error_page("Could not reach Discord. Please try again.")
             return
         manageable = _extract_manageable(guilds)
         if not manageable:
@@ -517,17 +559,63 @@ a{{color:#8ab4ff;text-decoration:none}}
         )
         self._redirect("/", {"Set-Cookie": _cookie(session)})
 
-    def _handle_logout(self):
-        raw = self.headers.get("Cookie", "")
-        for part in raw.split(";"):
-            key, _, value = part.strip().partition("=")
-            if key != "birdbot_session":
-                continue
-            SESSIONS.pop(value, None)
+    def _refresh_long_lived(self, value, session):
+        refresh = session.get("refresh")
+        if not refresh or not _client_id() or not _client_secret():
+            return None
+        lock = REFRESH_LOCKS.setdefault(value, threading.Lock())
+        with lock:
+            try:
+                token = _oauth_refresh(refresh)
+            except Exception:
+                log.error("token refresh failed", exc_info=True)
+                return None
+            if token.get("error") or not token.get("access_token"):
+                return None
+            try:
+                status, me = _discord_get("/users/@me", token["access_token"])
+                if status != 200:
+                    return None
+                status, guilds = _discord_get("/users/@me/guilds", token["access_token"])
+                if status != 200:
+                    return None
+            except Exception:
+                log.error("discord api failed during refresh", exc_info=True)
+                return None
+            manageable = _extract_manageable(guilds)
+            new_refresh = token.get("refresh_token") or refresh
+            exp = time.time() + SESSION_TTL
+            new_session = {
+                "user": {"id": me.get("id"), "username": me.get("username")},
+                "manageable": manageable,
+                "exp": exp,
+                "refresh": new_refresh,
+            }
+            SESSIONS[value] = new_session
             db = getattr(BOT, "db", None)
             if db is not None:
                 try:
-                    db.delete_web_session(value)
+                    db.save_web_session(
+                        _token_digest(value),
+                        me.get("id"),
+                        me.get("username"),
+                        manageable,
+                        exp,
+                        new_refresh,
+                    )
+                except Exception:
+                    log.warning("web session refresh persist failed", exc_info=True)
+            return new_session
+
+    def _handle_logout(self):
+        value = self._cookie_token()
+        if value:
+            SESSIONS.pop(value, None)
+            REFRESH_LOCKS.pop(value, None)
+            db = getattr(BOT, "db", None)
+            if db is not None:
+                try:
+                    db.delete_web_session(_token_digest(value))
                 except Exception:
                     pass
         self._redirect("/", {"Set-Cookie": "birdbot_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"})
@@ -546,6 +634,11 @@ a{{color:#8ab4ff;text-decoration:none}}
         if BOT is None or db is None:
             self._json(503, {"ok": False, "error": "Bot is still starting up. Try again in a few seconds."})
             return
+        if time.time() > session["exp"] - SESSION_STALE:
+            session = self._refresh_long_lived(self._cookie_token(), session)
+            if session is None:
+                self._json(401, {"ok": False, "error": "not_authed"})
+                return
         params = {k: v[0] for k, v in urllib.parse.parse_qs(query).items()}
         guild_id = params.get("guild") or None
         try:
@@ -554,9 +647,9 @@ a{{color:#8ab4ff;text-decoration:none}}
                 self._json(409, payload)
                 return
             self._json(200, payload)
-        except Exception as e:
-            traceback.print_exc()
-            self._json(500, {"ok": False, "error": str(e)})
+        except Exception:
+            log.error("bootstrap failed", exc_info=True)
+            self._json(500, {"ok": False, "error": "Internal error"})
 
 
 def start_server():
