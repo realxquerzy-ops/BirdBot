@@ -331,7 +331,7 @@ class CoreCog(commands.Cog):
         if not state["active"]:
             return
 
-        if content_lower != "bird":
+        if content_lower not in ("bird", "pip"):
             if "brd" in content_lower or content_lower in self.MISSPELLS:
                 if games_cog:
                     await games_cog.unlock_achievement(
