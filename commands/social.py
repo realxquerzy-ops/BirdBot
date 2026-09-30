@@ -507,7 +507,7 @@ class SocialCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @discord.app_commands.command(name="setchannel", description="Set the channel where birds will spawn (Admin only)")
-    @discord.app_commands.checks.has_permissions(manage_channels=True)
+    @discord.app_commands.checks.has_permissions(manage_guild=True)
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def setchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
