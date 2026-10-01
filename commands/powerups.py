@@ -3,7 +3,7 @@ import random
 import time
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from mods import get_mods
 
@@ -43,6 +43,10 @@ class PowerupsCog(commands.Cog):
         self.effects = {}
         self.sabo = {}
         self.birdfood = {}
+        self.birdfood_watcher.start()
+
+    def cog_unload(self):
+        self.birdfood_watcher.cancel()
 
     def _self_entry(self, guild_id, user_id):
         key = (int(guild_id), int(user_id))
@@ -140,19 +144,34 @@ class PowerupsCog(commands.Cog):
         return False
 
     def is_birdfood_active(self, guild_id):
-        key = int(guild_id)
-        until = self.birdfood.get(key, 0)
-        if until > time.time():
-            return True
-        if until:
-            self.birdfood.pop(key, None)
-        return False
+        return self.birdfood.get(int(guild_id), 0) > time.time()
 
     def spawn_interval_divisor(self, guild_id):
         return 30 if self.is_birdfood_active(guild_id) else 1
 
     def activate_birdfood(self, guild_id):
         self.birdfood[int(guild_id)] = time.time() + 30
+
+    @tasks.loop(seconds=2.0)
+    async def birdfood_watcher(self):
+        now = time.time()
+        for guild_id in list(self.birdfood):
+            if self.birdfood.get(guild_id, 0) > now:
+                continue
+            self.birdfood.pop(guild_id, None)
+            try:
+                settings = getattr(self.bot, "server_settings", {}) or {}
+                channel_id = settings.get(str(guild_id))
+                if channel_id:
+                    channel = self.bot.get_channel(int(channel_id))
+                    if channel is not None:
+                        await channel.send("🥣 **BirdFood has worn off!** Birds are back to normal spawn rates.")
+            except Exception as e:
+                print(f"[birdfood] end message error: {e}")
+
+    @birdfood_watcher.before_loop
+    async def before_birdfood_watcher(self):
+        await self.bot.wait_until_ready()
 
     def active_self_text(self, guild_id, user_id):
         entry = self._self_entry(guild_id, user_id)
