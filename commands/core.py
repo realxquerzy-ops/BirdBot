@@ -465,7 +465,12 @@ class CoreCog(commands.Cog):
         state["from_whistle"] = False
 
         extra = f" *(... and a double! {double_icon})*" if doubled else ""
-        await message.reply(f"🎉 **{message.author.mention}** successfully caught the **{caught_bird}** in **{catch_duration:.2f}s**!{extra}")
+        time_text = (
+            f"{round(catch_duration):.2f}s"
+            if abs(catch_duration - round(catch_duration)) < 0.05
+            else f"{catch_duration:.2f}s"
+        )
+        await message.reply(f"🎉 **{message.author.mention}** successfully caught the **{caught_bird}** in **{time_text}**!{extra}")
 
     @discord.app_commands.command(name="help", description="Show bot commands")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
