@@ -148,9 +148,6 @@ class PowerupsCog(commands.Cog):
             self.birdfood.pop(key, None)
         return False
 
-    def spawn_interval_divisor(self, guild_id):
-        return 20 if self.is_birdfood_active(guild_id) else 1
-
     def activate_birdfood(self, guild_id):
         self.birdfood[int(guild_id)] = time.time() + 30
 
