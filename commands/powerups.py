@@ -21,6 +21,7 @@ class PowerupsCog(commands.Cog):
         "scarecrow": {"name": "🧹 Scarecrow", "desc": "Blocks the next sabotage aimed at you", "type": "self"},
         "bird_whistle": {"name": "🐦 Bird Whistle", "desc": "70% chance to call a wild bird to spawn", "type": "self"},
         "muzzle": {"name": "🔇 Muzzle", "desc": "Silence a player for 10 seconds", "type": "sabotage"},
+        "birdfood": {"name": "🥣 BirdFood", "desc": "Birds spawn 20x more often for 30 seconds", "type": "self"},
     }
 
     DROP_WEIGHTS = {
@@ -41,6 +42,7 @@ class PowerupsCog(commands.Cog):
         self.bot = bot
         self.effects = {}
         self.sabo = {}
+        self.birdfood = {}
 
     def _self_entry(self, guild_id, user_id):
         key = (int(guild_id), int(user_id))
@@ -137,6 +139,21 @@ class PowerupsCog(commands.Cog):
             return random.random() < 0.7
         return False
 
+    def is_birdfood_active(self, guild_id):
+        key = int(guild_id)
+        until = self.birdfood.get(key, 0)
+        if until > time.time():
+            return True
+        if until:
+            self.birdfood.pop(key, None)
+        return False
+
+    def spawn_interval_divisor(self, guild_id):
+        return 20 if self.is_birdfood_active(guild_id) else 1
+
+    def activate_birdfood(self, guild_id):
+        self.birdfood[int(guild_id)] = time.time() + 30
+
     def active_self_text(self, guild_id, user_id):
         entry = self._self_entry(guild_id, user_id)
         parts = []
@@ -152,6 +169,8 @@ class PowerupsCog(commands.Cog):
             parts.append(f"🪙 Golden Gut: `{entry['golden_gut']}` sells left")
         if entry.get("scarecrow", 0) > 0:
             parts.append("🧹 Scarecrow: ready")
+        if self.is_birdfood_active(guild_id):
+            parts.append("🥣 BirdFood: active (20x spawns)")
         return " | ".join(parts) if parts else None
 
     @discord.app_commands.command(name="powerups", description="View your powerups and active effects")
@@ -202,6 +221,7 @@ class PowerupsCog(commands.Cog):
         discord.app_commands.Choice(name="🧹 Scarecrow", value="scarecrow"),
         discord.app_commands.Choice(name="🐦 Bird Whistle", value="bird_whistle"),
         discord.app_commands.Choice(name="🔇 Muzzle", value="muzzle"),
+        discord.app_commands.Choice(name="🥣 BirdFood", value="birdfood"),
     ])
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
@@ -341,6 +361,13 @@ class PowerupsCog(commands.Cog):
                 entry = self._sabo_entry(guild_id, member.id)
                 entry["muzzle_until"] = time.time() + 10
                 desc = f"🔇 **{interaction.user.mention}** muzzled **{member.mention}** for 10 seconds!"
+
+            elif powerup == "birdfood":
+                self.activate_birdfood(guild_id)
+                core_cog = self.bot.get_cog("CoreCog")
+                if core_cog:
+                    core_cog.next_spawn_times[str(guild_id)] = time.time()
+                desc = f"🥣 **{interaction.user.mention}** scattered BirdFood! Birds spawn **20x more often** for 30 seconds!"
 
             embed = discord.Embed(
                 title=f"🎒 {info['name']} Used!",

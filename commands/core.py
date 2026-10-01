@@ -56,9 +56,11 @@ class CoreCog(commands.Cog):
         self.spawn_weights = [float(bird["weight"]) for bird in self.bot.birds]
         self.next_spawn_times = {}
         self.bird_spawner.start()
+        self.birdfood_spawner.start()
 
     def cog_unload(self):
         self.bird_spawner.cancel()
+        self.birdfood_spawner.cancel()
 
     def _new_spawn_state(self):
         return {"active": False, "name": None, "spawn_time": None, "msg_obj": None, "pending_user": None, "from_whistle": False}
@@ -68,7 +70,11 @@ class CoreCog(commands.Cog):
         mods = get_mods(self.bot, guild_id)
         lo = max(1, int(mods["spawn_min_sec"]))
         hi = max(lo, int(mods["spawn_max_sec"]))
-        self.next_spawn_times[guild_id] = time.time() + random.randint(lo, hi)
+        interval = random.randint(lo, hi)
+        powerups_cog = self.bot.get_cog("PowerupsCog")
+        if powerups_cog is not None:
+            interval = max(1, int(interval / powerups_cog.spawn_interval_divisor(guild_id)))
+        self.next_spawn_times[guild_id] = time.time() + interval
 
     WEEKEND_RARITY_EXP = 0.85
 
@@ -154,60 +160,84 @@ class CoreCog(commands.Cog):
         now = time.time()
         self.bot.server_settings = self.bot.db.get_server_settings()
 
-        for guild_id, channel_id in list(self.bot.server_settings.items()):
+        for guild_id, _ in list(self.bot.server_settings.items()):
             try:
-                guild = self.bot.get_guild(int(guild_id))
-                if guild is None:
-                    continue
-                state = self.bot.spawn_states.get(guild_id)
-                if state is None:
-                    state = self._new_spawn_state()
-                    self.bot.spawn_states[guild_id] = state
-
-                if state["active"]:
-                    continue
-
-                if self.next_spawn_times.get(guild_id, 0) > now:
-                    continue
-
-                state["from_whistle"] = False
-
-                channel = self.bot.get_channel(int(channel_id))
-                if not channel:
-                    try:
-                        channel = await self.bot.fetch_channel(int(channel_id))
-                    except Exception as e:
-                        self.log.error("fetch_channel fail for %s: %s", guild.name, e)
-                        continue
-
-                bird = random.choices(self.bot.birds, weights=self.spawn_weights_for(guild_id), k=1)[0]
-                self.log.info("SPAWN %s in %s", bird["name"], guild.name)
-
-                state["active"] = True
-                state["spawn_time"] = now
-                state["name"] = bird["name"]
-
-                sticker = None
-                try:
-                    sticker = await self.bot.fetch_sticker(bird["sticker_id"])
-                except Exception:
-                    pass
-
-                content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
-                try:
-                    if sticker:
-                        msg = await channel.send(content=content_text, stickers=[sticker])
-                    else:
-                        msg = await channel.send(content=content_text)
-                    state["msg_obj"] = msg
-                except Exception as e:
-                    state["active"] = False
-                    state["name"] = None
-                    self.log.error("Error in spawner send: %s", e)
-
-                self._schedule_next_spawn(guild_id)
+                await self._spawn_for_guild(guild_id, now)
             except Exception as e:
                 self.log.error("Error in spawner: %s", e)
+
+    @tasks.loop(seconds=2.0)
+    async def birdfood_spawner(self):
+        powerups_cog = self.bot.get_cog("PowerupsCog")
+        if powerups_cog is None:
+            return
+        now = time.time()
+        for guild_id, _ in list(self.bot.server_settings.items()):
+            if not powerups_cog.is_birdfood_active(guild_id):
+                continue
+            try:
+                await self._spawn_for_guild(guild_id, now)
+            except Exception as e:
+                self.log.error("Error in birdfood spawner: %s", e)
+
+    async def _spawn_for_guild(self, guild_id, now):
+        channel_id = self.bot.server_settings.get(guild_id)
+        if not channel_id:
+            return
+        guild = self.bot.get_guild(int(guild_id))
+        if guild is None:
+            return
+        state = self.bot.spawn_states.get(guild_id)
+        if state is None:
+            state = self._new_spawn_state()
+            self.bot.spawn_states[guild_id] = state
+
+        if state["active"]:
+            return
+
+        if self.next_spawn_times.get(guild_id, 0) > now:
+            return
+
+        state["from_whistle"] = False
+
+        channel = self.bot.get_channel(int(channel_id))
+        if not channel:
+            try:
+                channel = await self.bot.fetch_channel(int(channel_id))
+            except Exception as e:
+                self.log.error("fetch_channel fail for %s: %s", guild.name, e)
+                return
+
+        bird = random.choices(self.bot.birds, weights=self.spawn_weights_for(guild_id), k=1)[0]
+        self.log.info("SPAWN %s in %s", bird["name"], guild.name)
+
+        state["active"] = True
+        state["spawn_time"] = now
+        state["name"] = bird["name"]
+
+        sticker = None
+        try:
+            sticker = await self.bot.fetch_sticker(bird["sticker_id"])
+        except Exception:
+            pass
+
+        content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
+        try:
+            if sticker:
+                msg = await channel.send(content=content_text, stickers=[sticker])
+            else:
+                msg = await channel.send(content=content_text)
+            state["msg_obj"] = msg
+        except Exception as e:
+            state["active"] = False
+            state["name"] = None
+            self.log.error("Error in spawner send: %s", e)
+
+        self._schedule_next_spawn(guild_id)
+
+    @birdfood_spawner.before_loop
+    async def before_birdfood_spawner(self):
+        await self.bot.wait_until_ready()
 
     @bird_spawner.before_loop
     async def before_bird_spawner(self):

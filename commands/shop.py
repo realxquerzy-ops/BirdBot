@@ -100,6 +100,7 @@ class ShopCog(commands.Cog):
         "scarecrow": 35,
         "bird_whistle": 140,
         "muzzle": 45,
+        "birdfood": 5000,
     }
 
     def __init__(self, bot):
