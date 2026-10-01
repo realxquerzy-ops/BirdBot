@@ -72,8 +72,8 @@ class CoreCog(commands.Cog):
         hi = max(lo, int(mods["spawn_max_sec"]))
         interval = random.randint(lo, hi)
         powerups_cog = self.bot.get_cog("PowerupsCog")
-        if powerups_cog is not None and powerups_cog.is_birdfood_active(guild_id):
-            interval = random.randint(5, 8)
+        if powerups_cog is not None:
+            interval = max(1, int(interval / powerups_cog.spawn_interval_divisor(guild_id)))
         self.next_spawn_times[guild_id] = time.time() + interval
 
     WEEKEND_RARITY_EXP = 0.85

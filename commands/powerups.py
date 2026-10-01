@@ -21,7 +21,7 @@ class PowerupsCog(commands.Cog):
         "scarecrow": {"name": "🧹 Scarecrow", "desc": "Blocks the next sabotage aimed at you", "type": "self"},
         "bird_whistle": {"name": "🐦 Bird Whistle", "desc": "70% chance to call a wild bird to spawn", "type": "self"},
         "muzzle": {"name": "🔇 Muzzle", "desc": "Silence a player for 10 seconds", "type": "sabotage"},
-        "birdfood": {"name": "🥣 BirdFood", "desc": "Birds spawn 20x more often for 30 seconds", "type": "self"},
+        "birdfood": {"name": "🥣 BirdFood", "desc": "Birds spawn 30x more often for 30 seconds", "type": "self"},
     }
 
     DROP_WEIGHTS = {
@@ -148,6 +148,9 @@ class PowerupsCog(commands.Cog):
             self.birdfood.pop(key, None)
         return False
 
+    def spawn_interval_divisor(self, guild_id):
+        return 30 if self.is_birdfood_active(guild_id) else 1
+
     def activate_birdfood(self, guild_id):
         self.birdfood[int(guild_id)] = time.time() + 30
 
@@ -167,7 +170,7 @@ class PowerupsCog(commands.Cog):
         if entry.get("scarecrow", 0) > 0:
             parts.append("🧹 Scarecrow: ready")
         if self.is_birdfood_active(guild_id):
-            parts.append("🥣 BirdFood: active (20x spawns)")
+            parts.append("🥣 BirdFood: active (30x spawns)")
         return " | ".join(parts) if parts else None
 
     @discord.app_commands.command(name="powerups", description="View your powerups and active effects")
@@ -364,7 +367,7 @@ class PowerupsCog(commands.Cog):
                 core_cog = self.bot.get_cog("CoreCog")
                 if core_cog:
                     core_cog.next_spawn_times[str(guild_id)] = time.time()
-                desc = f"🥣 **{interaction.user.mention}** scattered BirdFood! Birds spawn **20x more often** for 30 seconds!"
+                desc = f"🥣 **{interaction.user.mention}** scattered BirdFood! Birds spawn **30x more often** for 30 seconds!"
 
             embed = discord.Embed(
                 title=f"🎒 {info['name']} Used!",
