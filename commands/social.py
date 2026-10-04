@@ -74,7 +74,7 @@ class TradeSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("❌ You cannot modify the other user's offer!", ephemeral=True)
+            await interaction.response.send_message("❌ You can't change the other user's offer!", ephemeral=True)
             return
 
         if self.values[0] == "No birds available":
@@ -115,7 +115,7 @@ class TradeRemoveSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("❌ You cannot modify the other user's offer!", ephemeral=True)
+            await interaction.response.send_message("❌ You can't change the other user's offer!", ephemeral=True)
             return
         if self.values[0] == "__none__":
             await interaction.response.send_message("❌ Nothing to remove.", ephemeral=True)
@@ -153,7 +153,7 @@ class CoinOfferModal(discord.ui.Modal):
             return
 
         if val < 0:
-            await interaction.response.send_message("❌ Amount cannot be negative!", ephemeral=True)
+            await interaction.response.send_message("❌ Amount can't be negative!", ephemeral=True)
             return
 
         balance = int(self.view_instance.bot.db.get_birdcoin(int(self.view_instance.guild_id), interaction.user.id))
@@ -282,7 +282,7 @@ class TradeConfirmView(discord.ui.View):
     @discord.ui.button(label="Add BirdCoin", style=discord.ButtonStyle.blurple, row=2)
     async def add_coin(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user not in [self.initiator, self.target]:
-            await interaction.response.send_message("You are not part of this trade!", ephemeral=True)
+            await interaction.response.send_message("You're not part of this trade!", ephemeral=True)
             return
         balance = self.bot.db.get_birdcoin(int(self.guild_id), interaction.user.id)
         modal = CoinOfferModal(self, interaction.user.id, balance)
@@ -291,7 +291,7 @@ class TradeConfirmView(discord.ui.View):
     @discord.ui.button(label="Confirm Trade", style=discord.ButtonStyle.green, row=2)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user not in [self.initiator, self.target]:
-            await interaction.response.send_message("You are not part of this trade!", ephemeral=True)
+            await interaction.response.send_message("You're not part of this trade!", ephemeral=True)
             return
 
         init_has = bool(self.offers[self.initiator.id]) or self.offer_coins.get(self.initiator.id, 0) > 0
@@ -362,7 +362,7 @@ class TradeConfirmView(discord.ui.View):
     @discord.ui.button(label="Cancel / Decline", style=discord.ButtonStyle.red, row=2)
     async def cancel_trade(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user not in [self.initiator, self.target]:
-            await interaction.response.send_message("You cannot cancel this trade!", ephemeral=True)
+            await interaction.response.send_message("You can't cancel this trade!", ephemeral=True)
             return
         await interaction.response.edit_message(content="❌ Trade was cancelled by a participant.", view=None)
         self.stop()
@@ -379,7 +379,7 @@ class TradeRequestView(discord.ui.View):
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.green)
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.target:
-            await interaction.response.send_message("Only the user who received the trade request can accept it!", ephemeral=True)
+            await interaction.response.send_message("Only the person who received the trade request can accept it!", ephemeral=True)
             return
 
         await interaction.response.defer()
@@ -399,7 +399,7 @@ class TradeRequestView(discord.ui.View):
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.red)
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.target and interaction.user != self.initiator:
-            await interaction.response.send_message("You cannot decline this trade!", ephemeral=True)
+            await interaction.response.send_message("You can't decline this trade!", ephemeral=True)
             return
         await interaction.response.edit_message(content="❌ Trade request declined.", view=None)
         self.stop()
@@ -419,7 +419,7 @@ class SocialCog(commands.Cog):
             return
 
         if member.bot or member == interaction.user:
-            await interaction.followup.send("❌ You cannot trade with bots or yourself!", ephemeral=True)
+            await interaction.followup.send("❌ You can't trade with bots or yourself!", ephemeral=True)
             return
 
         guild_id = interaction.guild.id
@@ -448,7 +448,7 @@ class SocialCog(commands.Cog):
     async def say_command(self, interaction: discord.Interaction, message: str):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id not in self.bot.whitelisted_users:
-            await interaction.followup.send("❌ You do not have permission to use this command!", ephemeral=True)
+            await interaction.followup.send("❌ You don't have permission to use this command!", ephemeral=True)
             return
 
         try:
@@ -456,7 +456,7 @@ class SocialCog(commands.Cog):
                 await interaction.channel.send(message)
                 await interaction.followup.send("Message sent successfully!", ephemeral=True)
             else:
-                await interaction.followup.send("❌ No channel found to send message.", ephemeral=True)
+                await interaction.followup.send("❌ No channel found to send the message.", ephemeral=True)
         except Exception as e:
             print(f"[say] error: {e}")
             await interaction.followup.send(f"❌ Failed to send: {e}", ephemeral=True)
@@ -467,7 +467,7 @@ class SocialCog(commands.Cog):
     async def resetspawn(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id not in self.bot.whitelisted_users:
-            await interaction.followup.send("❌ You do not have permission to use this debug command!", ephemeral=True)
+            await interaction.followup.send("❌ You don't have permission to use this debug command!", ephemeral=True)
             return
 
         guild_id = str(interaction.guild.id) if interaction.guild else "dm"
@@ -480,7 +480,7 @@ class SocialCog(commands.Cog):
     async def prescheck(self, interaction: discord.Interaction, member: discord.Member):
         await interaction.response.defer(ephemeral=True)
         if interaction.user.id not in self.bot.whitelisted_users:
-            await interaction.followup.send("❌ You do not have permission to use this debug command!", ephemeral=True)
+            await interaction.followup.send("❌ You don't have permission to use this debug command!", ephemeral=True)
             return
 
         guild = interaction.guild

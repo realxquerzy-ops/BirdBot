@@ -10,16 +10,16 @@ from mods import get_mods
 
 class PowerupsCog(commands.Cog):
     POWERUPS = {
-        "shield": {"name": "🛡️ Shield", "desc": "70% chance to protect your birds from a gamble or fight loss", "type": "self"},
+        "shield": {"name": "🛡️ Shield", "desc": "70% chance to save your birds from a gamble or fight loss", "type": "self"},
         "double_xp": {"name": "⚡ Double XP", "desc": "2x BirdPass XP for your next 5 catches", "type": "self"},
         "double_catch": {"name": "🍀 Lucky Net", "desc": "20% chance to double your bird for the next 5 catches", "type": "self"},
-        "sab_miss": {"name": "🪃 Distraction", "desc": "Makes a player's next catch fail (bird escapes)", "type": "sabotage"},
-        "sab_half_xp": {"name": "📉 Demotivate", "desc": "Halves a player's BirdPass XP for their next 3 catches", "type": "sabotage"},
-        "sab_steal": {"name": "🕵️ Pocket", "desc": "50% chance to steal 1 bird from a player (rarer birds are harder to steal)", "type": "sabotage"},
+        "sab_miss": {"name": "🪃 Distraction", "desc": "Makes a player's next catch fail (the bird runs away)", "type": "sabotage"},
+        "sab_half_xp": {"name": "📉 Demotivate", "desc": "Halves a player's BirdPass XP for 3 catches", "type": "sabotage"},
+        "sab_steal": {"name": "🕵️ Pocket", "desc": "50% chance to steal 1 bird from a player. Rarer birds are harder to steal.", "type": "sabotage"},
         "golden_gut": {"name": "🪙 Golden Gut", "desc": "+50% BirdCoin from your next 3 sells", "type": "self"},
         "bigger_net": {"name": "🔭 Double It", "desc": "Guaranteed double bird for your next catch", "type": "self"},
         "scarecrow": {"name": "🧹 Scarecrow", "desc": "Blocks the next sabotage aimed at you", "type": "self"},
-        "bird_whistle": {"name": "🐦 Bird Whistle", "desc": "70% chance to call a wild bird to spawn", "type": "self"},
+        "bird_whistle": {"name": "🐦 Bird Whistle", "desc": "70% chance to make a wild bird spawn", "type": "self"},
         "muzzle": {"name": "🔇 Muzzle", "desc": "Silence a player for 10 seconds", "type": "sabotage"},
         "birdfood": {"name": "🥣 BirdFood", "desc": "Birds spawn 30x more often for 30 seconds", "type": "self"},
     }
@@ -165,7 +165,7 @@ class PowerupsCog(commands.Cog):
                 if channel_id:
                     channel = self.bot.get_channel(int(channel_id))
                     if channel is not None:
-                        await channel.send("🥣 **BirdFood has worn off!** Birds are back to normal spawn rates.")
+                        await channel.send("🥣 **BirdFood has worn off!** Birds spawn normally again.")
             except Exception as e:
                 print(f"[birdfood] end message error: {e}")
 
@@ -223,7 +223,7 @@ class PowerupsCog(commands.Cog):
             description=inventory_text + (f"\n\n✨ **Active:** {active}" if active else ""),
             color=discord.Color.purple()
         )
-        embed.set_footer(text="Use powerups with /use. Sabotage powerups target other players!")
+        embed.set_footer(text="Use them with /use. Sabotage powerups hit other players!")
         await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="use", description="Use a self powerup or sabotage another player")
@@ -265,7 +265,7 @@ class PowerupsCog(commands.Cog):
 
             if info["type"] == "self":
                 if member is not None:
-                    await interaction.followup.send("❌ Self powerups can only be used on yourself!", ephemeral=True)
+                    await interaction.followup.send("❌ Use this powerup on yourself, not on others!", ephemeral=True)
                     return
             else:
                 if member is None:
@@ -289,7 +289,7 @@ class PowerupsCog(commands.Cog):
             if powerup in ("sab_miss", "sab_half_xp", "sab_steal", "muzzle") and self.consume_scarecrow(guild_id, member.id):
                 embed = discord.Embed(
                     title="🧹 Scarecrow Blocked!",
-                    description=f"**{member.mention}**'s Scarecrow blocked **{interaction.user.mention}**'s **{info['name']}**!",
+                    description=f"**{member.mention}**'s Scarecrow blocked **{info['name']}** from **{interaction.user.mention}**!",
                     color=discord.Color.blue()
                 )
                 await interaction.followup.send(embed=embed)
@@ -300,7 +300,7 @@ class PowerupsCog(commands.Cog):
             if powerup == "shield":
                 entry = self._self_entry(guild_id, user_id)
                 entry["shield"] = entry.get("shield", 0) + 1
-                desc = f"🛡️ **{interaction.user.mention}** equipped a Shield! 70% chance to protect them from the next loss."
+                desc = f"🛡️ **{interaction.user.mention}** equipped a Shield! 70% chance to block the next loss."
 
             elif powerup == "double_xp":
                 entry = self._self_entry(guild_id, user_id)
@@ -329,7 +329,7 @@ class PowerupsCog(commands.Cog):
                 if not success:
                     embed = discord.Embed(
                         title="🕵️ Pickpocket Failed!",
-                        description=f"🕵️ **{interaction.user.mention}** tried to pickpocket **{member.mention}** but they noticed and nothing was stolen!",
+                        description=f"🕵️ **{interaction.user.mention}** tried to pickpocket **{member.mention}** but they noticed! Nothing was stolen.",
                         color=discord.Color.purple()
                     )
                     await interaction.followup.send(embed=embed)
@@ -361,7 +361,7 @@ class PowerupsCog(commands.Cog):
             elif powerup == "scarecrow":
                 entry = self._self_entry(guild_id, user_id)
                 entry["scarecrow"] = entry.get("scarecrow", 0) + 1
-                desc = f"🧹 **{interaction.user.mention}** set up a Scarecrow! The next sabotage aimed at them will be blocked."
+                desc = f"🧹 **{interaction.user.mention}** set up a Scarecrow! It blocks the next sabotage aimed at them."
 
             elif powerup == "bird_whistle":
                 mods = get_mods(self.bot, guild_id)
@@ -396,7 +396,7 @@ class PowerupsCog(commands.Cog):
             await interaction.followup.send(embed=embed)
         except Exception as e:
             print(f"Error in use command: {e}")
-            await interaction.followup.send("❌ An error occurred while executing this command.", ephemeral=True)
+            await interaction.followup.send("❌ Something went wrong. Try again!", ephemeral=True)
 
 
 async def setup(bot):

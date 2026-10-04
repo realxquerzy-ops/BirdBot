@@ -60,7 +60,7 @@ class RedeemCog(commands.Cog):
     async def redeem(self, interaction: discord.Interaction, code: str):
         await interaction.response.defer()
         if not interaction.guild:
-            await interaction.followup.send("❌ This command can only be used in a server!", ephemeral=True)
+            await interaction.followup.send("❌ This command can only be used in a server.", ephemeral=True)
             return
 
         guild_id = interaction.guild.id
@@ -75,13 +75,13 @@ class RedeemCog(commands.Cog):
             return
 
         if status == "invalid":
-            await interaction.followup.send("❌ That redeem code doesn't exist. Check for typos!", ephemeral=True)
+            await interaction.followup.send("❌ That redeem code does not exist.", ephemeral=True)
             return
         if status == "empty":
-            await interaction.followup.send("❌ That code has already been fully redeemed!", ephemeral=True)
+            await interaction.followup.send("❌ That code has already been used up.", ephemeral=True)
             return
         if status == "used":
-            await interaction.followup.send("❌ You already redeemed this code!", ephemeral=True)
+            await interaction.followup.send("❌ You already redeemed this code.", ephemeral=True)
             return
 
         lines = self._apply_rewards(guild_id, user_id, rewards)

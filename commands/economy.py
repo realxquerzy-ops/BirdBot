@@ -28,7 +28,7 @@ class EconomyCog(commands.Cog):
             description=rates_text,
             color=discord.Color.blue()
         )
-        embed.set_footer(text="Higher rarity means higher value and lower drop rate!")
+        embed.set_footer(text="Higher rarity means higher value and lower drop chance.")
         await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="inventory", description="View your caught birds inventory for this server")
@@ -38,7 +38,7 @@ class EconomyCog(commands.Cog):
     async def inventory(self, interaction: discord.Interaction, member: discord.Member = None):
         await interaction.response.defer()
         if not interaction.guild:
-            await interaction.followup.send("❌ This command can only be used in a server!")
+            await interaction.followup.send("❌ This command can only be used in a server.")
             return
 
         guild_id = interaction.guild.id
@@ -58,7 +58,7 @@ class EconomyCog(commands.Cog):
                 description=inventory_text + f"\n\n💎 **Total Inventory Value:** `{total_val:,}` points",
                 color=discord.Color.green()
             )
-            embed.set_footer(text=f"Total Birds Caught Here: {total_birds:,}")
+            embed.set_footer(text=f"Total birds caught here: {total_birds:,}")
             await interaction.followup.send(embed=embed)
             return
 
@@ -82,7 +82,7 @@ class EconomyCog(commands.Cog):
             description=inventory_text + f"\n\n💎 **Total Inventory Value:** `{total_val}` points",
             color=discord.Color.green()
         )
-        embed.set_footer(text=f"Total Birds Caught Here: {len(user_birds)}")
+        embed.set_footer(text=f"Total birds caught here: {len(user_birds)}")
         await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="leaderboard", description="View the top bird value leaderboard for this server")
@@ -91,7 +91,7 @@ class EconomyCog(commands.Cog):
     async def leaderboard(self, interaction: discord.Interaction):
         await interaction.response.defer()
         if not interaction.guild:
-            await interaction.followup.send("❌ This command can only be used in a server!")
+            await interaction.followup.send("❌ This command can only be used in a server.")
             return
 
         guild_id = interaction.guild.id
@@ -103,7 +103,7 @@ class EconomyCog(commands.Cog):
         if not rows:
             embed = discord.Embed(
                 title="🏆 Server Bird Value Leaderboard",
-                description="No birds have been caught in this server yet!",
+                description="No birds have been caught in this server yet.",
                 color=discord.Color.orange()
             )
             await interaction.followup.send(embed=embed)
@@ -156,7 +156,7 @@ class EconomyCog(commands.Cog):
             merge_next[src] = birds[i + 1]
         return merge_cost, merge_next
 
-    @discord.app_commands.command(name="merge", description="Merge birds into rarer birds (e.g. 2 Bird → 1 Good Bird)")
+    @discord.app_commands.command(name="merge", description="Merge birds into rarer birds")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def merge(self, interaction: discord.Interaction):
@@ -186,7 +186,7 @@ class MergeSelect(discord.ui.Select):
                 value=src,
                 description=f"{merge_cost[src]}x {src} = 1x {merge_next[src]}"
             ))
-        super().__init__(placeholder="Which bird do you want to merge?", options=options[:25], row=0)
+        super().__init__(placeholder="Which bird to merge?", options=options[:25], row=0)
 
     async def callback(self, interaction: discord.Interaction):
         view = self.view
@@ -195,7 +195,7 @@ class MergeSelect(discord.ui.Select):
         cost = view.merge_cost[src]
         max_merges = min(counts.get(src, 0) // cost, 5)
         if max_merges < 1:
-            await interaction.response.send_message("❌ You don't have enough of that bird anymore!", ephemeral=True)
+            await interaction.response.send_message("❌ You don't have enough of that bird.", ephemeral=True)
             return
         await interaction.response.send_modal(MergeModal(view, src, view.merge_next[src], cost, max_merges))
 
@@ -284,10 +284,10 @@ class MergeView(discord.ui.View):
             lines.append(line)
         embed = discord.Embed(
             title="🔀 Merge Birds",
-            description="\n".join(lines) + "\n\n⚡ **King Bird** cannot be merged.",
+            description="\n".join(lines) + "\n\n⚡ **King Bird** can't be merged.",
             color=discord.Color.purple()
         )
-        embed.set_footer(text="Pick a bird below to merge it into a rarer bird. Max 5 merges at once.")
+        embed.set_footer(text="Pick a bird to merge into a rarer one. Max 5 merges at once.")
         return embed
 
 

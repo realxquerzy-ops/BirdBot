@@ -22,7 +22,7 @@ class GlobalCog(commands.Cog):
             description="\n".join(lines),
             color=discord.Color.gold()
         )
-        embed.set_footer(text="Breaking these rules may result in a BirdBot ban.")
+        embed.set_footer(text="Breaking these rules may get you banned from BirdBot.")
         await interaction.response.send_message(embed=embed)
 
     @discord.app_commands.command(name="glb", description="View global and advanced leaderboards with filters and fastest times")
@@ -53,7 +53,7 @@ class GlobalCog(commands.Cog):
                 rows = self.bot.db.fetchall("SELECT guild_id, user_id, birds FROM inventories")
 
                 if not rows:
-                    await interaction.followup.send("❌ No inventory data found yet!", ephemeral=True)
+                    await interaction.followup.send("❌ No inventory data yet.", ephemeral=True)
                     return
 
                 server_inventories_map = {}
@@ -119,7 +119,7 @@ class GlobalCog(commands.Cog):
             if server_id:
                 if int(server_id) in modified_guilds:
                     await interaction.followup.send(
-                        f"❌ Server ID `{server_id}` has custom settings and is excluded from leaderboards.",
+                        f"❌ Server ID `{server_id}` has custom settings, so it is excluded from leaderboards.",
                         ephemeral=True,
                     )
                     return
@@ -132,7 +132,7 @@ class GlobalCog(commands.Cog):
                 banned = all_global_bans
 
             if not rows:
-                await interaction.followup.send("❌ No inventory data found yet!", ephemeral=True)
+                await interaction.followup.send("❌ No inventory data yet.", ephemeral=True)
                 return
 
             user_stats = {}
@@ -160,7 +160,7 @@ class GlobalCog(commands.Cog):
                 user_stats[u_id]["value"] += sum(bird_values.get(b_name.lower(), 0) for b_name in birds_list)
 
             if not user_stats:
-                await interaction.followup.send("❌ No data found for this filter/scope!", ephemeral=True)
+                await interaction.followup.send("❌ No data for this filter or scope.", ephemeral=True)
                 return
 
             if filter_by == "value":
@@ -173,7 +173,7 @@ class GlobalCog(commands.Cog):
                 sort_key = "fastest_time"
                 user_stats = {k: v for k, v in user_stats.items() if v["fastest_time"] > 0}
                 if not user_stats:
-                    await interaction.followup.send("❌ No fastest time data available yet!", ephemeral=True)
+                    await interaction.followup.send("❌ No fastest time data yet.", ephemeral=True)
                     return
                 is_reverse = False
 
@@ -208,7 +208,7 @@ class GlobalCog(commands.Cog):
 
         except Exception as e:
             print(f"Error in glb command: {e}")
-            await interaction.followup.send("❌ An error occurred while generating the leaderboard.", ephemeral=True)
+            await interaction.followup.send("❌ An error occurred while making the leaderboard.", ephemeral=True)
 
     def _can_ban(self, interaction):
         return interaction.user.id in self.bot.whitelisted_users
@@ -229,7 +229,7 @@ class GlobalCog(commands.Cog):
                          scope: str = "server", reason: str = None):
         await interaction.response.defer()
         if not self._can_ban(interaction):
-            await interaction.followup.send("❌ Only the bot owner can use this command!", ephemeral=True)
+            await interaction.followup.send("❌ Only the bot owner can use this command.", ephemeral=True)
             return
 
         if scope == "server":
@@ -243,7 +243,7 @@ class GlobalCog(commands.Cog):
         reason_txt = f"\n📝 Reason: {reason}" if reason else ""
         embed = discord.Embed(
             title="🚫 User Banned from BirdBot!",
-            description=f"**{member.mention}** can no longer use BirdBot {scope_txt} (commands, catching, everything).{reason_txt}",
+            description=f"**{member.mention}** can no longer use BirdBot {scope_txt}.{reason_txt}",
             color=discord.Color.red()
         )
         await interaction.followup.send(embed=embed)
@@ -267,7 +267,7 @@ class GlobalCog(commands.Cog):
                            scope: str = "server"):
         await interaction.response.defer()
         if not self._can_ban(interaction):
-            await interaction.followup.send("❌ Only the bot owner can use this command!", ephemeral=True)
+            await interaction.followup.send("❌ Only the bot owner can use this command.", ephemeral=True)
             return
 
         if scope == "global":

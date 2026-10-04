@@ -189,7 +189,7 @@ class FightAddModal(discord.ui.Modal):
         view = self.view_instance
         owner_id = self.select_item.owner_id
         if interaction.user.id != owner_id:
-            await interaction.response.send_message("❌ You cannot send the other player's birds!", ephemeral=True)
+            await interaction.response.send_message("❌ You can't send the other player's birds!", ephemeral=True)
             return
 
         bird = self.select_item.selected_bird
@@ -250,7 +250,7 @@ class FightAddSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.owner_id:
-            await interaction.response.send_message("❌ You cannot send the other player's birds!", ephemeral=True)
+            await interaction.response.send_message("❌ You can't send the other player's birds!", ephemeral=True)
             return
 
         if self.values[0] == "No birds available":
@@ -410,7 +410,7 @@ class FightChallengeView(discord.ui.View):
         if remaining is not None:
             timer_line = (
                 f"\n⏳ **{self.defender.name}** has `{max(0, int(remaining))}s` to respond!\n"
-                f"💤 If time runs out, it counts as **Ignore** and the attacker may strike!"
+                f"💤 If time runs out, it counts as **Ignore** — the attacker can still strike!"
             )
         friendly_line = "\n\n✨ **Friendly battle** — no birds lost, no powerups!" if self.friendly else ""
         return discord.Embed(
@@ -419,8 +419,8 @@ class FightChallengeView(discord.ui.View):
                 f"🔵 **{self.attacker.name}** is attacking with: **{fmt_commit(self.atk_commit)}**\n"
                 f"💪 Total battle power: `{int(val)}`\n\n"
                 f"**{self.defender.name}**, choose:\n"
-                f"⚔️ **Fight Back** — send your own birds into battle\n"
-                f"🕶️ **Ignore** — refuse the fight (the attacker may still strike!)"
+                f"⚔️ **Fight Back** — send your own birds to fight\n"
+                f"🕶️ **Ignore** — decline the fight (attacker can still strike!)"
                 f"{timer_line}{friendly_line}"
             ),
             color=discord.Color.green() if self.friendly else discord.Color.blurple()
@@ -481,8 +481,8 @@ class FightChallengeView(discord.ui.View):
             embed = discord.Embed(
                 title="🕶️ Attack Missed!",
                 description=(
-                    f"**{self.attacker.name}** tried to strike **{self.defender.name}** "
-                    f"but they dodged the attack! Nothing was stolen."
+                    f"**{self.attacker.name}** tried to attack **{self.defender.name}** "
+                    f"but they dodged it! Nothing was stolen."
                 ),
                 color=discord.Color.greyple()
             )
@@ -524,7 +524,7 @@ class FightChallengeView(discord.ui.View):
             embed = discord.Embed(
                 title="⚔️ Raid Successful!",
                 description=(
-                    f"**{self.attacker.name}** ignored their refusal and raided **{self.defender.name}**!\n"
+                    f"**{self.attacker.name}** ignored the refusal and raided **{self.defender.name}**!\n"
                     f"🕵️ Stolen: **{fmt_commit(Counter(moved))}**"
                     + (f"\n{payout}" if payout else "")
                 ),
@@ -533,7 +533,7 @@ class FightChallengeView(discord.ui.View):
         else:
             embed = discord.Embed(
                 title="🕶️ Attack Missed!",
-                description=f"**{self.attacker.name}** attacked but found nothing left to steal!",
+                description=f"**{self.attacker.name}** attacked, but **{self.defender.name}** had nothing left to steal!",
                 color=discord.Color.greyple()
             )
         
@@ -636,7 +636,7 @@ class AutoBattleView(discord.ui.View):
                 title="⚔️ Friendly Battle Started!" if self.friendly else "⚔️ Battle Started!",
                 description=(
                     f"🔵 **{self.attacker.name}** attacks with: **{fmt_commit(self.atk_commit)}** (power `{int(atk_val)}`)\n"
-                    f"🟢 **{self.defender.name}** must send birds to defend!\n"
+                    f"🟢 **{self.defender.name}** needs to send birds to defend!\n"
                     f"{timer_line}\n\n"
                     f"💡 If no birds are sent, the round ends."
                     f"{friendly_note}"
@@ -666,7 +666,7 @@ class AutoBattleView(discord.ui.View):
                 title="⚔️ Attacker Won Round 1!",
                 description=(
                     f"🔵 **{self.attacker.name}** defeated your birds!\n"
-                    f"🟢 **{self.defender.name}** has one last chance — send more birds!\n"
+                    f"🟢 **{self.defender.name}** has one last chance to send more birds!\n"
                     f"{timer_line}\n\n"
                     f"💡 If no birds are sent, the battle ends."
                     f"{friendly_note}"
@@ -1057,7 +1057,7 @@ class FightLiveView(discord.ui.View):
                 f"🔵 **{self.attacker.name}**: **{fmt_commit(atk_commit)}** (power `{int(atk_val)}`) *({atk_check})*\n"
                 f"🟢 **{self.defender.name}**: **{fmt_commit(def_commit)}** (power `{int(def_val)}`) *({def_check})*\n\n"
                 f"🎲 {bar} `{pct_atk:.2f}%` vs `{pct_def:.2f}%`\n\n"
-                f"Send more birds from the menus, then **both players press ⚔️ Fight!** to battle.\n"
+                f"Send more birds from the menus, then **both players press ⚔️ Fight!** to start.\n"
                 f"Or press 🏃 to flee and cut your losses."
             ),
             color=discord.Color.dark_red()

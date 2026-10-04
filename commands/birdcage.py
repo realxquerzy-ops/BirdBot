@@ -31,7 +31,7 @@ class PutAmountModal(discord.ui.Modal, title="Put birds in cage"):
     async def on_submit(self, interaction: discord.Interaction):
         view = self.put_view
         if interaction.user.id != view.user_id:
-            await interaction.response.send_message("❌ Not your cage!", ephemeral=True)
+            await interaction.response.send_message("❌ Not your cage.", ephemeral=True)
             return
         try:
             requested = int(str(self.amount.value).strip())
@@ -49,7 +49,7 @@ class PutAmountModal(discord.ui.Modal, title="Put birds in cage"):
         free = cap - len(cage["birds"])
         if free <= 0:
             await interaction.followup.send(
-                f"❌ Cage is full! ({cap} slots). Upgrade with `/birdcage`.",
+                f"❌ Cage is full ({cap} slots). Upgrade with `/birdcage`.",
                 ephemeral=True,
             )
             return
@@ -104,10 +104,10 @@ class CagePutSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         view = self.view
         if interaction.user.id != view.user_id:
-            await interaction.response.send_message("❌ Not your cage!", ephemeral=True)
+            await interaction.response.send_message("❌ Not your cage.", ephemeral=True)
             return
         if self.values[0] == "__none__":
-            await interaction.response.send_message("❌ You have no birds!", ephemeral=True)
+            await interaction.response.send_message("❌ You have no birds.", ephemeral=True)
             return
 
         name = self.values[0]
@@ -116,7 +116,7 @@ class CagePutSelect(discord.ui.Select):
         free = cap - len(cage["birds"])
         if free <= 0:
             await interaction.response.send_message(
-                f"❌ Cage is full! ({cap} slots). Upgrade with `/birdcage`.",
+                f"❌ Cage is full ({cap} slots). Upgrade with `/birdcage`.",
                 ephemeral=True,
             )
             return
@@ -167,7 +167,7 @@ class CageView(discord.ui.View):
             next_cap = CAGE_CAPACITY.get(cage["level"] + 1, cap)
             upgrade_text = f"\n\n⬆️ Upgrade to Lv.{cage['level'] + 1}: **{cost} BirdCoin** → {next_cap} slots"
         else:
-            upgrade_text = "\n\n🏆 Already at max level!"
+            upgrade_text = "\n\n🏆 Already at max level."
 
         embed = discord.Embed(
             title=f"🦜 Bird Cage — {self.user.name}",
@@ -185,7 +185,7 @@ class CageView(discord.ui.View):
     @discord.ui.button(label="Put Bird", style=discord.ButtonStyle.green, row=1)
     async def put_bird(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Not your cage!", ephemeral=True)
+            await interaction.response.send_message("❌ Not your cage.", ephemeral=True)
             return
         put_view = PutBirdView(self.bot, self.guild_id, self.user_id, self)
         put_view._msg = self._msg
@@ -194,12 +194,12 @@ class CageView(discord.ui.View):
     @discord.ui.button(label="Cash Out", style=discord.ButtonStyle.blurple, row=1)
     async def cash_out(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Not your cage!", ephemeral=True)
+            await interaction.response.send_message("❌ Not your cage.", ephemeral=True)
             return
 
         cage = self.bot.db.get_birdcage(self.guild_id, self.user_id)
         if not cage["birds"]:
-            await interaction.response.send_message("❌ No birds in cage!", ephemeral=True)
+            await interaction.response.send_message("❌ No birds in the cage.", ephemeral=True)
             return
 
         accumulated = cage["accumulated"]
@@ -218,7 +218,7 @@ class CageView(discord.ui.View):
             title="🪙 Cage Cashed Out!",
             description=(
                 f"**Birds returned:** {len(birds)}\n"
-                f"**BirdCoin earned:** `{accumulated:.2f}`"
+                f"**BirdCoins earned:** `{accumulated:.2f}`"
             ),
             color=discord.Color.gold(),
         )
@@ -227,18 +227,18 @@ class CageView(discord.ui.View):
     @discord.ui.button(label="Upgrade", style=discord.ButtonStyle.blurple, row=2)
     async def upgrade(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Not your cage!", ephemeral=True)
+            await interaction.response.send_message("❌ Not your cage.", ephemeral=True)
             return
 
         cage = self.bot.db.get_birdcage(self.guild_id, self.user_id)
         if cage["level"] >= MAX_LEVEL:
-            await interaction.response.send_message("❌ Already at max level!", ephemeral=True)
+            await interaction.response.send_message("❌ Already at max level.", ephemeral=True)
             return
 
         cost = UPGRADE_COST.get(cage["level"], 99999)
         if not self.bot.db.spend_birdcoin(self.guild_id, self.user_id, cost):
             await interaction.response.send_message(
-                f"❌ Need **{cost} BirdCoin** but you have `{self.bot.db.get_birdcoin(self.guild_id, self.user_id) or 0:.0f}`.", ephemeral=True,
+                f"❌ Need {cost} BirdCoin, but you have `{self.bot.db.get_birdcoin(self.guild_id, self.user_id) or 0:.0f}`.", ephemeral=True,
             )
             return
 
@@ -274,7 +274,7 @@ class PutBirdView(discord.ui.View):
     @discord.ui.button(label="Back", style=discord.ButtonStyle.grey, row=1)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Not your cage!", ephemeral=True)
+            await interaction.response.send_message("❌ Not your cage.", ephemeral=True)
             return
         await interaction.response.edit_message(embed=self.parent_view.build_embed(), view=self.parent_view)
 
@@ -329,7 +329,7 @@ class BirdCageCog(commands.Cog):
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
     async def birdcage(self, interaction: discord.Interaction):
         if not interaction.guild:
-            await interaction.response.send_message("❌ Server only!", ephemeral=True)
+            await interaction.response.send_message("❌ Server only.", ephemeral=True)
             return
 
         await interaction.response.defer()

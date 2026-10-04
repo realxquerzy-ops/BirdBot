@@ -137,7 +137,7 @@ class CoreCog(commands.Cog):
         embed = discord.Embed(
             title="🚫 Auto-Ban: Bot catching detected",
             description=(
-                f"**<@{user_id}>** was globally banned for automated bird catching.\n\n"
+                f"**<@{user_id}>** was banned from every server for auto-catching birds.\n\n"
                 f"Catches: `{stats['catches']}`\n"
                 f"Average catch time: `{avg:.2f}s`\n"
                 f"Instant (<1s) catches: `{instant_pct * 100:.0f}%`"
@@ -146,7 +146,7 @@ class CoreCog(commands.Cog):
         )
         recent = ", ".join(f"{h:.2f}s" for h in stats["hist"][-10:])
         embed.add_field(name="Recent catch times", value=recent, inline=False)
-        embed.set_footer(text="If this looks wrong, unban with the owner command.")
+        embed.set_footer(text="Think this is wrong? The owner can unban them.")
         for uid in self.bot.whitelisted_users:
             try:
                 u = self.bot.get_user(uid)
@@ -494,13 +494,13 @@ class CoreCog(commands.Cog):
 
         state["from_whistle"] = False
 
-        extra = f" *(... and a double! {double_icon})*" if doubled else ""
+        extra = f" *(and a double! {double_icon})*" if doubled else ""
         time_text = (
             f"{round(catch_duration):.2f}s"
             if abs(catch_duration - round(catch_duration)) < 0.05
             else f"{catch_duration:.2f}s"
         )
-        await message.reply(f"🎉 **{message.author.mention}** successfully caught the **{caught_bird}** in **{time_text}**!{extra}")
+        await message.reply(f"🎉 **{message.author.mention}** caught the **{caught_bird}** in **{time_text}**!{extra}")
 
     @discord.app_commands.command(name="help", description="Show bot commands")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
@@ -522,14 +522,14 @@ class CoreCog(commands.Cog):
                 "</dm:0> - DM settings or info\n"
                 "</gamble:0> - Gamble your birds\n"
                 "</trade:0> - Trade birds with someone\n"
-                "</fight:0> - Fight another user with your birds\n"
+                "</fight:0> - Fight someone with your birds\n"
                 "</powerups:0> - View your powerups and active effects\n"
                 "</use:0> - Use a powerup or sabotage another player\n"
                 "</birdpass:0> - View your BirdPass level and rewards\n"
                 "</daily:0> - Claim your daily reward\n"
                 "</sell:0> - Sell birds for BirdCoin\n"
                 "</shop:0> - Buy powerups with BirdCoin\n"
-                "</birdcage:0> - Put birds in your cage to earn passive BirdCoin\n"
+                "</birdcage:0> - Put birds in your cage to earn BirdCoin\n"
                 "</balance:0> - View your BirdCoin balance"
             ),
             color=discord.Color.blue()

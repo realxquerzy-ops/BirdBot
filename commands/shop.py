@@ -64,7 +64,7 @@ class ShopCartView(discord.ui.View):
             if games_cog:
                 await games_cog.unlock_achievement(self.user_id, "shop_broke", interaction.channel, guild_id=self.guild_id)
             await interaction.followup.send(
-                f"❌ Not enough BirdCoin! Need 🪙`{self.cog.fmt_coin(price)}`, you have 🪙`{self.cog.fmt_coin(self.bot.db.get_birdcoin(self.guild_id, self.user_id))}`.",
+                f"❌ Not enough BirdCoin! You need 🪙`{self.cog.fmt_coin(price)}`, you have 🪙`{self.cog.fmt_coin(self.bot.db.get_birdcoin(self.guild_id, self.user_id))}`.",
                 ephemeral=True
             )
             await self._refresh()
@@ -136,7 +136,7 @@ class ShopCog(commands.Cog):
             description="\n".join(lines),
             color=discord.Color.orange()
         )
-        embed.set_footer(text=f"🪙 Your balance: {self.fmt_coin(balance)} | Press a button to buy that powerup!")
+        embed.set_footer(text=f"🪙 Your balance: {self.fmt_coin(balance)} | Press a button to buy!")
         return embed
 
     @discord.app_commands.command(name="sell", description="Sell birds for BirdCoin")
@@ -154,7 +154,7 @@ class ShopCog(commands.Cog):
             None,
         )
         if not canon:
-            await interaction.followup.send("❌ That's not a real bird! Check /droprates for names.", ephemeral=True)
+            await interaction.followup.send("❌ No bird has that name! Check /droprates.", ephemeral=True)
             return
 
         guild_id = interaction.guild.id
@@ -202,12 +202,13 @@ class ShopCog(commands.Cog):
             amount_txt = f"all `{sold}x`"
         else:
             amount_txt = f"`{sold}x` (you still have `{remaining}x`)"
-        boost_txt = "\n🪙 Golden Gut: **+50%** BirdCoin applied!" if boost else ""
+        boost_txt = "\n🪙 Golden Gut gave you **+50%** BirdCoin!" if boost else ""
         embed = discord.Embed(
             title="💸 Sale Complete!",
             description=(
                 f"Sold {amount_txt} **{canon}** for 🪙 **{self.fmt_coin(earned)} BirdCoin**!\n"
-                f"💎 Value `{base_value}` × 1.4 = **`{value}`** each | 🪙 New balance: `{self.fmt_coin(new_balance)}`{boost_txt}"
+                f"💎 Value `{base_value}` × 1.4 = **`{value}`** each\n"
+                f"🪙 New balance: `{self.fmt_coin(new_balance)}`{boost_txt}"
             ),
             color=discord.Color.green()
         )
@@ -236,7 +237,7 @@ class ShopCog(commands.Cog):
             description=f"🪙 **`{self.fmt_coin(balance)}`** BirdCoin",
             color=discord.Color.gold()
         )
-        embed.set_footer(text="Earn BirdCoin by selling birds with /sell, spend it in /shop!")
+        embed.set_footer(text="Earn BirdCoin with /sell. Spend it in /shop!")
         await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="pay", description="Send BirdCoin directly to another member")
@@ -281,7 +282,7 @@ class ShopCog(commands.Cog):
         if not ok:
             balance = self.bot.db.get_birdcoin(guild_id, sender_id)
             await interaction.followup.send(
-                f"❌ Not enough BirdCoin! You have 🪙`{self.fmt_coin(balance)}`, need 🪙`{self.fmt_coin(send_amt)}`.",
+                f"❌ Not enough BirdCoin! You need 🪙`{self.fmt_coin(send_amt)}`, you have 🪙`{self.fmt_coin(balance)}`.",
                 ephemeral=True,
             )
             return
