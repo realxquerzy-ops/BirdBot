@@ -147,8 +147,10 @@ def fight_coin_reward(bot, atk_val, def_val):
 
 
 # BirdBot always defends with 999x Radioactive Bird, which inflates the normal
-# XP formula into the tens of thousands. Beating it pays out a fraction instead.
-BIRDBOT_XP_DIVISOR = 100
+# formulas into five figures. Beating it pays a flat, fixed amount instead so the
+# payout no longer scales with the boss's inflated 999-bird commit.
+BIRDBOT_XP_REWARD = 5000
+BIRDBOT_COIN_REWARD = 500
 
 
 async def award_winner_rewards(bot, guild_id_int, winner, atk_val, def_val, channel=None, loser=None):
@@ -158,7 +160,7 @@ async def award_winner_rewards(bot, guild_id_int, winner, atk_val, def_val, chan
 
     beat_birdbot = loser is not None and getattr(loser, "id", None) == bot.user.id
 
-    coins = fight_coin_reward(bot, atk_val, def_val)
+    coins = BIRDBOT_COIN_REWARD if beat_birdbot else fight_coin_reward(bot, atk_val, def_val)
     if coins > 0:
         try:
             bot.db.add_birdcoin(guild_id_int, winner.id, coins)
@@ -169,9 +171,7 @@ async def award_winner_rewards(bot, guild_id_int, winner, atk_val, def_val, chan
     birdpass_cog = bot.get_cog("BirdPassCog")
     if birdpass_cog:
         try:
-            xp = int(10 + (atk_val + def_val) * 2)
-            if beat_birdbot:
-                xp = max(1, xp // BIRDBOT_XP_DIVISOR)
+            xp = BIRDBOT_XP_REWARD if beat_birdbot else int(10 + (atk_val + def_val) * 2)
             await birdpass_cog.award_battle_xp(guild_id_int, winner.id, channel, xp)
             lines.append(f"⚡ **{winner.name}** earned **{xp} BirdPass XP**!")
         except Exception as e:
