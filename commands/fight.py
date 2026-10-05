@@ -146,10 +146,17 @@ def fight_coin_reward(bot, atk_val, def_val):
     return int(5 + total * 0.4)
 
 
-async def award_winner_rewards(bot, guild_id_int, winner, atk_val, def_val, channel=None):
+# BirdBot always defends with 999x Radioactive Bird, which inflates the normal
+# XP formula into the tens of thousands. Beating it pays out a fraction instead.
+BIRDBOT_XP_DIVISOR = 100
+
+
+async def award_winner_rewards(bot, guild_id_int, winner, atk_val, def_val, channel=None, loser=None):
     if getattr(winner, "id", None) == bot.user.id:
         return ""
     lines = []
+
+    beat_birdbot = loser is not None and getattr(loser, "id", None) == bot.user.id
 
     coins = fight_coin_reward(bot, atk_val, def_val)
     if coins > 0:
@@ -163,6 +170,8 @@ async def award_winner_rewards(bot, guild_id_int, winner, atk_val, def_val, chan
     if birdpass_cog:
         try:
             xp = int(10 + (atk_val + def_val) * 2)
+            if beat_birdbot:
+                xp = max(1, xp // BIRDBOT_XP_DIVISOR)
             await birdpass_cog.award_battle_xp(guild_id_int, winner.id, channel, xp)
             lines.append(f"⚡ **{winner.name}** earned **{xp} BirdPass XP**!")
         except Exception as e:
@@ -519,7 +528,8 @@ class FightChallengeView(discord.ui.View):
             atk_val = commit_value(self.bot, self.atk_commit)
             payout = await award_winner_rewards(
                 self.bot, guild_id_int, self.attacker, atk_val, atk_val,
-                getattr(self._expiry_msg, "channel", None)
+                getattr(self._expiry_msg, "channel", None),
+                loser=self.defender
             )
             embed = discord.Embed(
                 title="⚔️ Raid Successful!",
@@ -874,7 +884,8 @@ class AutoBattleView(discord.ui.View):
         if not self.friendly and not shield_saved:
             reward_payout = await award_winner_rewards(
                 self.bot, guild_id_int, winner, atk_val, def_val,
-                getattr(getattr(self, "_expiry_msg", None), "channel", None)
+                getattr(getattr(self, "_expiry_msg", None), "channel", None),
+                loser=loser
             )
 
         result_lines = []
@@ -1136,7 +1147,8 @@ class FightLiveView(discord.ui.View):
         if not shield_saved:
             reward_payout = await award_winner_rewards(
                 self.bot, guild_id_int, winner, atk_val, def_val,
-                getattr(getattr(self, "_expiry_msg", None), "channel", None)
+                getattr(getattr(self, "_expiry_msg", None), "channel", None),
+                loser=loser
             )
 
         result_lines = []
@@ -1756,7 +1768,8 @@ async def resolve_battle(bot, view, guild_id, attacker, defender, attacker_commi
     if not friendly and not shield_saved:
         reward_payout = await award_winner_rewards(
             bot, guild_id_int, winner, atk_val, def_val,
-            getattr(getattr(view, "_expiry_msg", None), "channel", None)
+            getattr(getattr(view, "_expiry_msg", None), "channel", None),
+            loser=loser
         )
 
     result_lines = []
