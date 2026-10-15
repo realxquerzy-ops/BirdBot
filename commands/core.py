@@ -157,28 +157,45 @@ class CoreCog(commands.Cog):
 
     @tasks.loop(seconds=30.0)
     async def bird_spawner(self):
-        now = time.time()
-        self.bot.server_settings = self.bot.db.get_server_settings()
-
-        for guild_id, _ in list(self.bot.server_settings.items()):
+        try:
+            now = time.time()
             try:
-                await self._spawn_for_guild(guild_id, now)
+                self.bot.server_settings = self.bot.db.get_server_settings()
             except Exception as e:
-                self.log.error("Error in spawner: %s", e)
+                self.log.error("spawner: settings refresh failed, using cached: %s", e)
+
+            for guild_id, _ in list(getattr(self.bot, "server_settings", {}).items()):
+                try:
+                    await self._spawn_for_guild(guild_id, now)
+                except Exception as e:
+                    self.log.error("Error in spawner: %s", e)
+        except Exception as e:
+            self.log.error("bird_spawner unexpected error (kept alive): %s", e)
+
+    @bird_spawner.error
+    async def bird_spawner_error(self, exc):
+        self.log.error("bird_spawner iteration crashed: %s", exc)
 
     @tasks.loop(seconds=2.0)
     async def birdfood_spawner(self):
-        powerups_cog = self.bot.get_cog("PowerupsCog")
-        if powerups_cog is None:
-            return
-        now = time.time()
-        for guild_id, _ in list(self.bot.server_settings.items()):
-            if not powerups_cog.is_birdfood_active(guild_id):
-                continue
-            try:
-                await self._spawn_for_guild(guild_id, now)
-            except Exception as e:
-                self.log.error("Error in birdfood spawner: %s", e)
+        try:
+            powerups_cog = self.bot.get_cog("PowerupsCog")
+            if powerups_cog is None:
+                return
+            now = time.time()
+            for guild_id, _ in list(getattr(self.bot, "server_settings", {}).items()):
+                if not powerups_cog.is_birdfood_active(guild_id):
+                    continue
+                try:
+                    await self._spawn_for_guild(guild_id, now)
+                except Exception as e:
+                    self.log.error("Error in birdfood spawner: %s", e)
+        except Exception as e:
+            self.log.error("birdfood_spawner unexpected error (kept alive): %s", e)
+
+    @birdfood_spawner.error
+    async def birdfood_spawner_error(self, exc):
+        self.log.error("birdfood_spawner iteration crashed: %s", exc)
 
     async def _spawn_for_guild(self, guild_id, now):
         channel_id = self.bot.server_settings.get(guild_id)

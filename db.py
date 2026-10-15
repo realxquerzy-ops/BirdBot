@@ -27,51 +27,66 @@ class Database:
     def close(self):
         self._pool.closeall()
 
+    _STALE_ERRORS = (psycopg2.OperationalError, psycopg2.InterfaceError)
+
     def _get_conn(self):
-        return self._pool.getconn()
+        conn = self._pool.getconn()
+        if getattr(conn, "closed", 0):
+            self._discard_conn(conn)
+            conn = self._pool.getconn()
+        return conn
 
     def _put_conn(self, conn):
         self._pool.putconn(conn)
 
-    def fetchone(self, sql, params=None):
-        conn = self._get_conn()
+    def _discard_conn(self, conn):
         try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                row = cur.fetchone()
-            conn.commit()
-            return row
+            self._pool.putconn(conn, close=True)
         except Exception:
-            conn.rollback()
-            raise
-        finally:
-            self._put_conn(conn)
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def _run(self, sql, params, fetch):
+        last_error = None
+        for _ in range(2):
+            conn = self._get_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(sql, params)
+                    if fetch == "one":
+                        result = cur.fetchone()
+                    elif fetch == "all":
+                        result = cur.fetchall()
+                    else:
+                        result = None
+                conn.commit()
+                return result
+            except self._STALE_ERRORS as exc:
+                last_error = exc
+                self._discard_conn(conn)
+                conn = None
+                continue
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+            finally:
+                if conn is not None:
+                    self._put_conn(conn)
+        raise last_error
+
+    def fetchone(self, sql, params=None):
+        return self._run(sql, params, "one")
 
     def fetchall(self, sql, params=None):
-        conn = self._get_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
-            conn.commit()
-            return rows
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            self._put_conn(conn)
+        return self._run(sql, params, "all")
 
     def execute(self, sql, params=None):
-        conn = self._get_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            self._put_conn(conn)
+        self._run(sql, params, None)
 
     @staticmethod
     def _loads_json(value):
