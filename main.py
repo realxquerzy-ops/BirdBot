@@ -328,7 +328,12 @@ async def on_ready():
             bot.db.save_achievements(guild.id, bot.user.id, all_ach)
         logging.info("[achievements] BirdBot'a %s başarım eklendi (%s sunucu).", len(all_ach), len(bot.guilds))
 
-    bot.loop.create_task(_self_ping_loop())
+    if os.getenv("KEEPALIVE", "1").strip().lower() in ("0", "false", "no", "off"):
+        logging.info("[keepalive] devre disi (KEEPALIVE=0)")
+    else:
+        task = getattr(bot, "_keepalive_task", None)
+        if task is None or task.done():
+            bot._keepalive_task = bot.loop.create_task(_self_ping_loop())
     bot._api_loop = bot.loop
 
 bot.birds = BIRDS
@@ -420,23 +425,66 @@ def _get_public_url():
     return os.getenv("RENDER_EXTERNAL_URL") or os.getenv("PUBLIC_URL")
 
 
+def _in_keepalive_sleep_window():
+    """True while inside KEEPALIVE_SLEEP_UTC (e.g. "0-6"), when we stop pinging.
+
+    Render's free plan gives 750 instance-hours/month, which is only enough for
+    one service running 24/7. Letting the service sleep part of the day keeps us
+    under that quota instead of being suspended for billing mid-month.
+    Set KEEPALIVE_SLEEP_UTC= (empty) to disable the window.
+    """
+    spec = (os.getenv("KEEPALIVE_SLEEP_UTC", "0-6") or "").strip()
+    if not spec:
+        return False
+    try:
+        start_s, end_s = spec.split("-", 1)
+        start, end = int(start_s), int(end_s)
+    except (ValueError, TypeError):
+        logging.warning("[keepalive] gecersiz KEEPALIVE_SLEEP_UTC=%r (ornek: 0-6)", spec)
+        return False
+    if start == end:
+        return False
+    hour = time.gmtime().tm_hour
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
+
 async def _self_ping_loop():
     """Render free, 15dk inbound istek yoksa servisi uyutur (spin-down).
-    Kendi public URL'sine periyodik istek atarak bunu engelliyoruz."""
+    Kendi public URL'sine periyodik istek atarak bunu engelliyoruz.
+
+    Ayarlar (ortam degiskeni):
+      KEEPALIVE=0            -> keepalive tamamen kapali (servis uyur)
+      KEEPALIVE_INTERVAL=600 -> ping araligi (saniye, 15dk'dan kucuk olmali)
+      KEEPALIVE_SLEEP_UTC=0-6-> bu UTC saat araliginda ping atilmaz (servis uyur)
+    """
     url = _get_public_url()
     if not url:
         logging.warning("[keepalive] PUBLIC_URL/RENDER_EXTERNAL_URL yok, self-ping devre dışı")
         return
     import aiohttp
     import asyncio as _asyncio
+    try:
+        interval = max(60, int(os.getenv("KEEPALIVE_INTERVAL", "600")))
+    except ValueError:
+        interval = 600
+    sleep_spec = (os.getenv("KEEPALIVE_SLEEP_UTC", "0-6") or "").strip()
+    logging.info(
+        "[keepalive] interval=%ss sleep_window=%s UTC",
+        interval, sleep_spec or "none",
+    )
     while True:
+        if _in_keepalive_sleep_window():
+            await _asyncio.sleep(interval)
+            continue
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{url.rstrip('/')}/health", timeout=aiohttp.ClientTimeout(total=15)) as resp:
                     logging.info("[keepalive] ping %s -> %s", url, resp.status)
         except Exception as e:
             logging.warning("[keepalive] ping failed: %s", e)
-        await _asyncio.sleep(300)
+        await _asyncio.sleep(interval)
 
 
 start_server()
