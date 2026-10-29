@@ -426,14 +426,14 @@ def _get_public_url():
 
 
 def _in_keepalive_sleep_window():
-    """True while inside KEEPALIVE_SLEEP_UTC (default "19-8"), when we stop pinging.
+    """True while inside KEEPALIVE_SLEEP_UTC (default ""), when we stop pinging.
 
     Render's free plan gives 750 instance-hours/month, which is only enough for
     one service running 24/7. Letting the service sleep part of the day keeps us
     under that quota instead of being suspended for billing mid-month.
     Set KEEPALIVE_SLEEP_UTC= (empty) to disable the window.
     """
-    spec = (os.getenv("KEEPALIVE_SLEEP_UTC", "19-8") or "").strip()
+    spec = (os.getenv("KEEPALIVE_SLEEP_UTC", "") or "").strip()
     if not spec:
         return False
     try:
@@ -469,7 +469,7 @@ async def _self_ping_loop():
         interval = max(60, int(os.getenv("KEEPALIVE_INTERVAL", "600")))
     except ValueError:
         interval = 600
-    sleep_spec = (os.getenv("KEEPALIVE_SLEEP_UTC", "19-8") or "").strip()
+    sleep_spec = (os.getenv("KEEPALIVE_SLEEP_UTC", "") or "").strip()
     logging.info(
         "[keepalive] interval=%ss sleep_window=%s UTC",
         interval, sleep_spec or "none",
