@@ -250,22 +250,41 @@ class GamesCog(commands.Cog):
                 global_ach = self.bot.db.get_achievements(0, target.id)
                 user_achievements = list(set(user_achievements + global_ach))
 
-        description = ""
+        # Build a compact 3-column layout so the embed is wider but shorter.
+        lines = []
         for ach_id, info in self.ACHIEVEMENTS_LIST.items():
             reward = self.ACHIEVEMENT_REWARDS.get(ach_id, 0)
             reward_txt = f" 🪙{reward:+}" if reward > 0 else ""
             if ach_id in user_achievements:
-                description += f"✅ **{info['name']}** — *{info['desc']}*{reward_txt}\n"
+                lines.append(f"✅ **{info['name']}** — *{info['desc']}*{reward_txt}")
             elif not info.get("hidden", False):
-                description += f"❌ **{info['name']}** — *{info['desc']}*{reward_txt}\n"
+                lines.append(f"❌ **{info['name']}** — *{info['desc']}*{reward_txt}")
             else:
-                description += f"❌ *???*\n"
+                lines.append("❌ *???*")
 
         embed = discord.Embed(
             title=f"🏆 {target.name}'s Achievements",
-            description=description or "No achievements unlocked yet!",
             color=discord.Color.gold()
         )
+
+        unlocked = sum(1 for a in self.ACHIEVEMENTS_LIST if a in user_achievements)
+        embed.set_footer(text=f"{unlocked}/{len(self.ACHIEVEMENTS_LIST)} unlocked")
+
+        if not lines:
+            embed.description = "No achievements unlocked yet!"
+        else:
+            # Split into 3 columns (Discord renders inline fields side-by-side).
+            cols = 3
+            chunk = (len(lines) + cols - 1) // cols
+            for i in range(cols):
+                part = lines[i * chunk:(i + 1) * chunk]
+                if part:
+                    embed.add_field(
+                        name="\u200b",
+                        value="\n".join(part),
+                        inline=True
+                    )
+
         await interaction.followup.send(embed=embed)
 
     @discord.app_commands.command(name="bird", description="Display a bird")
