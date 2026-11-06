@@ -534,11 +534,15 @@ class GamesCog(commands.Cog):
 
         content_text = f"A wild **{matched['name']}** appeared! Type **bird** to catch it!"
         msg = None
+        local_img = os.path.join("assets", "birds", f"{matched['name']}.png")
+        file = discord.File(local_img, filename=f"{matched['name']}.png") if not sticker and os.path.exists(local_img) else None
         if sticker and isinstance(channel, discord.TextChannel):
             try:
                 msg = await channel.send(content=content_text, stickers=[sticker])
             except discord.HTTPException:
-                msg = await channel.send(content=content_text)
+                msg = await channel.send(content=content_text, file=file) if file else await channel.send(content=content_text)
+        elif file:
+            msg = await channel.send(content=content_text, file=file)
         else:
             msg = await channel.send(content=content_text)
 

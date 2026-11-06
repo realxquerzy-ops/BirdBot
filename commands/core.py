@@ -291,8 +291,12 @@ class CoreCog(commands.Cog):
 
         content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
         try:
+            local_img = os.path.join("assets", "birds", f"{bird['name']}.png")
+            file = discord.File(local_img, filename=f"{bird['name']}.png") if not sticker and os.path.exists(local_img) else None
             if sticker:
                 msg = await channel.send(content=content_text, stickers=[sticker])
+            elif file:
+                msg = await channel.send(content=content_text, file=file)
             else:
                 msg = await channel.send(content=content_text)
             state["msg_obj"] = msg
@@ -351,8 +355,12 @@ class CoreCog(commands.Cog):
             content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
             if source:
                 content_text += f" *({source})*"
+            local_img = os.path.join("assets", "birds", f"{bird['name']}.png")
+            file = discord.File(local_img, filename=f"{bird['name']}.png") if not sticker and os.path.exists(local_img) else None
             if sticker:
                 await channel.send(content=content_text, stickers=[sticker])
+            elif file:
+                await channel.send(content=content_text, file=file)
             else:
                 await channel.send(content=content_text)
             return True
