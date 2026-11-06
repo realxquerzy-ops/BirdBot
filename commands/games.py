@@ -425,6 +425,15 @@ class GamesCog(commands.Cog):
         view = BoostView(self, guild_id, interaction.guild.name)
         await interaction.followup.send(embed=embed, view=view)
 
+    @discord.app_commands.command(name="spawnpoop", description="Spawn a birdpoop (whitelist only)")
+    @discord.app_commands.allowed_installs(guilds=True, users=False)
+    @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
+    async def spawnpoop_command(self, interaction: discord.Interaction):
+        if interaction.user.id not in self.bot.whitelisted_users:
+            await interaction.response.send_message("❌ You don't have permission to use this command.", ephemeral=True)
+            return
+        await self.spawn_command(interaction, bird_name="birdpoop")
+
     @discord.app_commands.command(name="spawn", description="Spawn a real catchable bird (whitelist only)")
     @discord.app_commands.describe(bird_name="Specific bird to spawn (leave empty for random)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
@@ -462,7 +471,7 @@ class GamesCog(commands.Cog):
                 await interaction.followup.send("❌ Could not find the bird channel!", ephemeral=True)
                 return
 
-        if bird_name and bird_name.lower() in ("poop", "birdpoop"):
+        if bird_name and bird_name.lower().replace(" ", "").replace("_", "") in ("poop", "birdpoop"):
             state["active"] = True
             state["spawn_time"] = time.time()
             state["name"] = "birdpoop"
@@ -515,6 +524,15 @@ class GamesCog(commands.Cog):
 
         state["msg_obj"] = msg
         await interaction.followup.send(f"✅ Spawned **{matched['name']}** in {channel.mention}!", ephemeral=True)
+
+    @spawn_command.autocomplete("bird_name")
+    async def spawn_autocomplete(self, interaction: discord.Interaction, current: str):
+        choices = ["Birdpoop"] + [b["name"] for b in self.bot.birds]
+        return [
+            discord.app_commands.Choice(name=c, value=c)
+            for c in choices
+            if current.lower() in c.lower()
+        ][:25]
 
     @discord.app_commands.command(name="pip", description="???")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
