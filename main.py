@@ -85,6 +85,13 @@ db.execute('''CREATE TABLE IF NOT EXISTS gamble_cooldowns (
     PRIMARY KEY (guild_id, user_id)
 )''')
 
+db.execute('''CREATE TABLE IF NOT EXISTS birdpoop_penalties (
+    guild_id BIGINT,
+    user_id BIGINT,
+    remaining_catches INTEGER DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id)
+)''')
+
 db.execute('''CREATE TABLE IF NOT EXISTS powerups (
     guild_id BIGINT,
     user_id BIGINT,
@@ -194,6 +201,7 @@ db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_guild ON inventories (gui
 db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_user ON inventories (user_id)")
 db.execute("CREATE INDEX IF NOT EXISTS idx_achievements_guild ON achievements (guild_id)")
 db.execute("CREATE INDEX IF NOT EXISTS idx_pip_claims_guild ON pip_claims (guild_id)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_birdpoop_penalties_guild ON birdpoop_penalties (guild_id)")
 
 # --- SABİT KUŞLARI VERİTABANINA YÜKLE ---
 default_birds = [

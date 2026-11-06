@@ -462,6 +462,20 @@ class GamesCog(commands.Cog):
                 await interaction.followup.send("❌ Could not find the bird channel!", ephemeral=True)
                 return
 
+        if bird_name and bird_name.lower() in ("poop", "birdpoop"):
+            state["active"] = True
+            state["spawn_time"] = time.time()
+            state["name"] = "birdpoop"
+            state["is_birdpoop"] = True
+            state["failed_users"] = set()
+            poop_emoji = discord.utils.get(interaction.guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
+            emoji_str = str(poop_emoji) if poop_emoji else "💩"
+            content_text = f"{emoji_str} A wild **Birdpoop** appeared! Type **bird** to catch it!"
+            msg = await channel.send(content=content_text)
+            state["msg_obj"] = msg
+            await interaction.followup.send(f"✅ Spawned **birdpoop** in {channel.mention}!", ephemeral=True)
+            return
+
         if bird_name:
             matched = None
             for bird in self.bot.birds:
@@ -480,6 +494,8 @@ class GamesCog(commands.Cog):
         state["active"] = True
         state["spawn_time"] = time.time()
         state["name"] = matched["name"]
+        state["is_birdpoop"] = False
+        state["failed_users"] = set()
 
         sticker = None
         try:

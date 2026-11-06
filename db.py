@@ -202,6 +202,36 @@ class Database:
         )
         return [(int(r[0]), float(r[1])) for r in rows]
 
+    def get_poop_penalty(self, guild_id, user_id):
+        row = self.fetchone(
+            "SELECT remaining_catches FROM birdpoop_penalties WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
+        return int(row[0]) if row and row[0] is not None else 0
+
+    def set_poop_penalty(self, guild_id, user_id, catches):
+        if catches <= 0:
+            self.execute(
+                "DELETE FROM birdpoop_penalties WHERE guild_id = %s AND user_id = %s",
+                (guild_id, user_id),
+            )
+        else:
+            self.execute(
+                """
+                INSERT INTO birdpoop_penalties (guild_id, user_id, remaining_catches) VALUES (%s, %s, %s)
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET remaining_catches = EXCLUDED.remaining_catches
+                """,
+                (guild_id, user_id, int(catches)),
+            )
+
+    def decrement_poop_penalty(self, guild_id, user_id):
+        current = self.get_poop_penalty(guild_id, user_id)
+        if current > 0:
+            new_val = current - 1
+            self.set_poop_penalty(guild_id, user_id, new_val)
+            return new_val
+        return 0
+
     def get_last_gamble(self, guild_id, user_id):
         row = self.fetchone(
             "SELECT last_gamble FROM gamble_cooldowns WHERE guild_id = %s AND user_id = %s",

@@ -63,7 +63,7 @@ class CoreCog(commands.Cog):
         self.birdfood_spawner.cancel()
 
     def _new_spawn_state(self):
-        return {"active": False, "name": None, "spawn_time": None, "msg_obj": None, "pending_user": None, "from_whistle": False}
+        return {"active": False, "name": None, "spawn_time": None, "msg_obj": None, "pending_user": None, "from_whistle": False, "is_birdpoop": False, "failed_users": set()}
 
     def _schedule_next_spawn(self, guild_id):
         """Cooldown catch anından itibaren başlasın — hızlı kullanıcılar için anında respawn engeli."""
@@ -225,12 +225,39 @@ class CoreCog(commands.Cog):
                 self.log.error("fetch_channel fail for %s: %s", guild.name, e)
                 return
 
+        # 5% chance to spawn birdpoop
+        if random.random() < 0.05:
+            self.log.info("SPAWN birdpoop in %s", guild.name)
+            state["active"] = True
+            state["spawn_time"] = now
+            state["name"] = "birdpoop"
+            state["is_birdpoop"] = True
+            state["failed_users"] = set()
+
+            poop_emoji = discord.utils.get(guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
+            emoji_str = str(poop_emoji) if poop_emoji else "💩"
+
+            content_text = f"{emoji_str} A wild **Birdpoop** appeared! Type **bird** to catch it!"
+            try:
+                msg = await channel.send(content=content_text)
+                state["msg_obj"] = msg
+            except Exception as e:
+                state["active"] = False
+                state["name"] = None
+                state["is_birdpoop"] = False
+                self.log.error("Error in poop spawner send: %s", e)
+
+            self._schedule_next_spawn(guild_id)
+            return
+
         bird = random.choices(self.bot.birds, weights=self.spawn_weights_for(guild_id), k=1)[0]
         self.log.info("SPAWN %s in %s", bird["name"], guild.name)
 
         state["active"] = True
         state["spawn_time"] = now
         state["name"] = bird["name"]
+        state["is_birdpoop"] = False
+        state["failed_users"] = set()
 
         sticker = None
         try:
@@ -378,6 +405,30 @@ class CoreCog(commands.Cog):
         if not state["active"]:
             return
 
+        guild_id_int = int(guild_id)
+        user_id_int = int(user_id)
+
+        # Handle 'skip' to clear birdpoop
+        if content_lower == "skip":
+            if state.get("is_birdpoop"):
+                state["active"] = False
+                state["name"] = None
+                state["is_birdpoop"] = False
+                state["failed_users"] = set()
+                self._schedule_next_spawn(guild_id)
+
+                msg_obj = state.get("msg_obj")
+                if msg_obj:
+                    try:
+                        await msg_obj.edit(content=msg_obj.content + " **(Cleaned up)**")
+                    except Exception:
+                        pass
+
+                poop_emoji = discord.utils.get(message.guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
+                emoji_str = str(poop_emoji) if poop_emoji else "💩"
+                await message.reply(f"🧹 **{message.author.mention}** cleaned up and skipped the {emoji_str} **birdpoop**! Safe!")
+            return
+
         if content_lower not in ("bird", "pip"):
             if "brd" in content_lower or content_lower in self.MISSPELLS:
                 if games_cog:
@@ -389,12 +440,53 @@ class CoreCog(commands.Cog):
                     )
             return
 
+        # If birdpoop is active and someone tries to catch it
+        if state.get("is_birdpoop"):
+            state["active"] = False
+            state["name"] = None
+            state["is_birdpoop"] = False
+            state["failed_users"] = set()
+            self._schedule_next_spawn(guild_id)
+
+            msg_obj = state.get("msg_obj")
+            if msg_obj:
+                try:
+                    await msg_obj.edit(content=msg_obj.content + " **(Gross! Stepped in poop)**")
+                except Exception:
+                    pass
+
+            self.bot.db.set_poop_penalty(guild_id_int, user_id_int, 3)
+            poop_emoji = discord.utils.get(message.guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
+            emoji_str = str(poop_emoji) if poop_emoji else "💩"
+            await message.reply(
+                f"🤢 **YUCK!** {message.author.mention} tried to catch the {emoji_str} **birdpoop**!\nYour hands are all dirty — you **cannot catch the next 3 birds**! 💩"
+            )
+            return
+
+        # If user has a birdpoop penalty, they cannot catch the bird
+        penalty = self.bot.db.get_poop_penalty(guild_id_int, user_id_int)
+        if penalty > 0:
+            failed_users = state.setdefault("failed_users", set())
+            if user_id_int in failed_users:
+                return
+            failed_users.add(user_id_int)
+            remaining = self.bot.db.decrement_poop_penalty(guild_id_int, user_id_int)
+            catches_word = "catches" if remaining != 1 else "catch"
+            poop_emoji = discord.utils.get(message.guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
+            emoji_str = str(poop_emoji) if poop_emoji else "💩"
+            if remaining > 0:
+                await message.reply(
+                    f"{emoji_str} **{message.author.mention}**, your hands are still dirty from birdpoop! You couldn't catch the bird! *(**{remaining}** {catches_word} remaining on your penalty)*"
+                )
+            else:
+                await message.reply(
+                    f"✨ **{message.author.mention}**, you tried to catch the bird with dirty hands and missed, but your hands are now clean! *(Penalty ended! You can catch birds starting next spawn)*"
+                )
+            return
+
         caught_bird = state["name"]
         spawn_time = state.get("spawn_time", time.time())
         catch_duration = time.time() - spawn_time
-
-        guild_id_int = int(guild_id)
-        user_id_int = int(user_id)
 
         powerups_cog = self.bot.get_cog("PowerupsCog")
         if powerups_cog and powerups_cog.consume_miss(guild_id_int, user_id_int):
