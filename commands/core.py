@@ -62,6 +62,31 @@ class CoreCog(commands.Cog):
         self.bird_spawner.cancel()
         self.birdfood_spawner.cancel()
 
+    async def _get_poop_emoji_str(self, guild=None):
+        # 1. Check cached application emojis from Discord Developer Portal
+        for e in getattr(self.bot, "app_emojis", []):
+            if e.name.lower() == "birdpoop":
+                return str(e)
+        # 2. Try fetching application emojis from API
+        try:
+            app_emojis = await self.bot.fetch_application_emojis()
+            self.bot.app_emojis = app_emojis
+            for e in app_emojis:
+                if e.name.lower() == "birdpoop":
+                    return str(e)
+        except Exception:
+            pass
+        # 3. Check guild emojis
+        if guild:
+            for e in guild.emojis:
+                if e.name.lower() == "birdpoop":
+                    return str(e)
+        # 4. Check mutual guild emojis
+        for e in self.bot.emojis:
+            if e.name.lower() == "birdpoop":
+                return str(e)
+        return "💩"
+
     def _new_spawn_state(self):
         return {"active": False, "name": None, "spawn_time": None, "msg_obj": None, "pending_user": None, "from_whistle": False, "is_birdpoop": False, "failed_users": set()}
 
@@ -234,8 +259,7 @@ class CoreCog(commands.Cog):
             state["is_birdpoop"] = True
             state["failed_users"] = set()
 
-            poop_emoji = discord.utils.get(guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
-            emoji_str = str(poop_emoji) if poop_emoji else "💩"
+            emoji_str = await self._get_poop_emoji_str(guild)
 
             content_text = f"{emoji_str} A wild **Birdpoop** appeared! Type **bird** to catch it!"
             try:
@@ -424,8 +448,7 @@ class CoreCog(commands.Cog):
                     except Exception:
                         pass
 
-                poop_emoji = discord.utils.get(message.guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
-                emoji_str = str(poop_emoji) if poop_emoji else "💩"
+                emoji_str = await self._get_poop_emoji_str(message.guild)
                 await message.reply(f"🧹 **{message.author.mention}** cleaned up and skipped the {emoji_str} **birdpoop**! Safe!")
             return
 
@@ -456,8 +479,7 @@ class CoreCog(commands.Cog):
                     pass
 
             self.bot.db.set_poop_penalty(guild_id_int, user_id_int, 3)
-            poop_emoji = discord.utils.get(message.guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
-            emoji_str = str(poop_emoji) if poop_emoji else "💩"
+            emoji_str = await self._get_poop_emoji_str(message.guild)
             await message.reply(
                 f"🤢 **YUCK!** {message.author.mention} tried to catch the {emoji_str} **birdpoop**!\nYour hands are all dirty — you **cannot catch the next 3 birds**! 💩"
             )
@@ -472,8 +494,7 @@ class CoreCog(commands.Cog):
             failed_users.add(user_id_int)
             remaining = self.bot.db.decrement_poop_penalty(guild_id_int, user_id_int)
             catches_word = "catches" if remaining != 1 else "catch"
-            poop_emoji = discord.utils.get(message.guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
-            emoji_str = str(poop_emoji) if poop_emoji else "💩"
+            emoji_str = await self._get_poop_emoji_str(message.guild)
             if remaining > 0:
                 await message.reply(
                     f"{emoji_str} **{message.author.mention}**, your hands are still dirty from birdpoop! You couldn't catch the bird! *(**{remaining}** {catches_word} remaining on your penalty)*"

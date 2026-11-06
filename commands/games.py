@@ -425,6 +425,27 @@ class GamesCog(commands.Cog):
         view = BoostView(self, guild_id, interaction.guild.name)
         await interaction.followup.send(embed=embed, view=view)
 
+    async def _get_poop_emoji_str(self, guild=None):
+        for e in getattr(self.bot, "app_emojis", []):
+            if e.name.lower() == "birdpoop":
+                return str(e)
+        try:
+            app_emojis = await self.bot.fetch_application_emojis()
+            self.bot.app_emojis = app_emojis
+            for e in app_emojis:
+                if e.name.lower() == "birdpoop":
+                    return str(e)
+        except Exception:
+            pass
+        if guild:
+            for e in guild.emojis:
+                if e.name.lower() == "birdpoop":
+                    return str(e)
+        for e in self.bot.emojis:
+            if e.name.lower() == "birdpoop":
+                return str(e)
+        return "💩"
+
     @discord.app_commands.command(name="spawnpoop", description="Spawn a birdpoop (whitelist only)")
     @discord.app_commands.allowed_installs(guilds=True, users=False)
     @discord.app_commands.allowed_contexts(guilds=True, dms=False, private_channels=False)
@@ -477,8 +498,7 @@ class GamesCog(commands.Cog):
             state["name"] = "birdpoop"
             state["is_birdpoop"] = True
             state["failed_users"] = set()
-            poop_emoji = discord.utils.get(interaction.guild.emojis, name="birdpoop") or discord.utils.get(self.bot.emojis, name="birdpoop")
-            emoji_str = str(poop_emoji) if poop_emoji else "💩"
+            emoji_str = await self._get_poop_emoji_str(interaction.guild)
             content_text = f"{emoji_str} A wild **Birdpoop** appeared! Type **bird** to catch it!"
             msg = await channel.send(content=content_text)
             state["msg_obj"] = msg

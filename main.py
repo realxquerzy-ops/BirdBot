@@ -323,6 +323,13 @@ async def on_ready():
                 logging.info("Modül yüklendi: %s", cog_name)
 
     try:
+        bot.app_emojis = await bot.fetch_application_emojis()
+        logging.info("[emojis] %s application emojis loaded: %s", len(bot.app_emojis), [e.name for e in bot.app_emojis])
+    except Exception as e:
+        bot.app_emojis = []
+        logging.warning("[emojis] Failed to fetch application emojis: %s", e)
+
+    try:
         synced = await bot.tree.sync()
         logging.info("%s global komut senkronize edildi.", len(synced))
     except Exception as e:
