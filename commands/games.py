@@ -9,6 +9,22 @@ from discord.ext import commands
 from mods import get_mods
 
 
+def get_local_bird_image(bird_name):
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    birds_dir = os.path.join(base_dir, "assets", "birds")
+    if not os.path.isdir(birds_dir):
+        return None
+    exact = os.path.join(birds_dir, f"{bird_name}.png")
+    if os.path.exists(exact):
+        return exact
+    clean_target = bird_name.lower().replace(" ", "").replace("_", "")
+    for fname in os.listdir(birds_dir):
+        if fname.lower().endswith(".png"):
+            clean_fname = fname[:-4].lower().replace(" ", "").replace("_", "")
+            if clean_fname == clean_target:
+                return os.path.join(birds_dir, fname)
+    return None
+
 class BoostView(discord.ui.View):
     def __init__(self, cog, guild_id, guild_name):
         super().__init__(timeout=120)
@@ -535,15 +551,15 @@ class GamesCog(commands.Cog):
 
         content_text = f"A wild **{matched['name']}** appeared! Type **bird** to catch it!"
         msg = None
-        local_img = os.path.join("assets", "birds", f"{matched['name']}.png")
-        file = discord.File(local_img, filename=f"{matched['name']}.png") if not sticker and os.path.exists(local_img) else None
-        if sticker and isinstance(channel, discord.TextChannel):
+        local_img = get_local_bird_image(matched['name'])
+        if local_img:
+            file = discord.File(local_img, filename=f"{matched['name']}.png")
+            msg = await channel.send(content=content_text, file=file)
+        elif sticker and isinstance(channel, discord.TextChannel):
             try:
                 msg = await channel.send(content=content_text, stickers=[sticker])
             except discord.HTTPException:
-                msg = await channel.send(content=content_text, file=file) if file else await channel.send(content=content_text)
-        elif file:
-            msg = await channel.send(content=content_text, file=file)
+                msg = await channel.send(content=content_text)
         else:
             msg = await channel.send(content=content_text)
 
