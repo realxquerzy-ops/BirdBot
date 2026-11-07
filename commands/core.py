@@ -509,10 +509,10 @@ class CoreCog(commands.Cog):
                 except Exception:
                     pass
 
-            self.bot.db.set_poop_penalty(guild_id_int, user_id_int, 3)
+            self.bot.db.set_poop_penalty(guild_id_int, user_id_int, 1)
             emoji_str = await self._get_poop_emoji_str(message.guild)
             await message.reply(
-                f"🤢 **YUCK!** {message.author.mention} tried to catch the {emoji_str} **birdpoop**!\nYour hands are all dirty — you **cannot catch the next 3 birds**! 💩"
+                f"🤢 **YUCK!** {message.author.mention} tried to catch the {emoji_str} **birdpoop**!\nYour hands are all dirty — you **cannot catch the next bird**! 💩"
             )
             return
 
