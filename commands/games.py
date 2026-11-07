@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands
 
 from mods import get_mods
+from commands.core import BIRD_SPAWN_TEMPLATES, POOP_SPAWN_TEMPLATES
 
 
 def get_local_bird_image(bird_name):
@@ -46,9 +47,9 @@ class BoostView(discord.ui.View):
         ok, cost, new = self.cog.bot.db.increment_guild_boost(self.guild_id, interaction.user.id)
         if not ok:
             if new >= 20:
-                await interaction.followup.send("❌ This server is already at max boost (20/20)!", ephemeral=True)
+                await interaction.followup.send("⭐ this server is already maxed out at 20/20 boost!", ephemeral=True)
             else:
-                await interaction.followup.send("❌ Not enough BirdCoin to boost this server!", ephemeral=True)
+                await interaction.followup.send("🪙 you don't have enough BirdCoins to boost this server!", ephemeral=True)
             return
 
         balance = self.cog.bot.db.get_birdcoin(self.guild_id, interaction.user.id)
@@ -190,7 +191,7 @@ class GamesCog(commands.Cog):
                 try:
                     embed = discord.Embed(
                         title="🏆 Achievement Unlocked!",
-                        description=f"<@{user_id}> has successfully unlocked:\n**{ach_info['name']}** — *{ach_info['desc']}*{reward_txt}",
+                        description=f"🎉 GG <@{user_id}> unlocked **{ach_info['name']}**!\n*{ach_info['desc']}*{reward_txt}",
                         color=discord.Color.gold()
                     )
                     await channel.send(embed=embed)
@@ -493,12 +494,12 @@ class GamesCog(commands.Cog):
             state = {"active": False, "name": None, "spawn_time": None, "msg_obj": None}
             self.bot.spawn_states[guild_id] = state
         if state["active"]:
-            await interaction.followup.send("❌ A bird is already active. Wait for it to be caught.", ephemeral=True)
+            await interaction.followup.send("⏳ there's already a bird active! catch or wait for that one first!", ephemeral=True)
             return
 
         channel_id = self.bot.db.get_server_channel(interaction.guild.id)
         if not channel_id:
-            await interaction.followup.send("❌ No bird channel set for this server!", ephemeral=True)
+            await interaction.followup.send("❌ no bird channel set up yet! use `/channel` to set one first.", ephemeral=True)
             return
 
         channel = self.bot.get_channel(channel_id)
@@ -506,7 +507,7 @@ class GamesCog(commands.Cog):
             try:
                 channel = await self.bot.fetch_channel(channel_id)
             except Exception:
-                await interaction.followup.send("❌ Could not find the bird channel!", ephemeral=True)
+                await interaction.followup.send("❌ couldn't find the bird channel anymore, did someone delete it?", ephemeral=True)
                 return
 
         if bird_name and bird_name.lower().replace(" ", "").replace("_", "") in ("poop", "birdpoop"):
@@ -516,10 +517,10 @@ class GamesCog(commands.Cog):
             state["is_birdpoop"] = True
             state["failed_users"] = set()
             emoji_str = await self._get_poop_emoji_str(interaction.guild)
-            content_text = f"{emoji_str} A wild **Birdpoop** appeared! Type **bird** to catch it!"
+            content_text = random.choice(POOP_SPAWN_TEMPLATES).format(emoji=emoji_str)
             msg = await channel.send(content=content_text)
             state["msg_obj"] = msg
-            await interaction.followup.send(f"✅ Spawned **birdpoop** in {channel.mention}!", ephemeral=True)
+            await interaction.followup.send(f"💩 dropped fresh **birdpoop** into {channel.mention}!", ephemeral=True)
             return
 
         if bird_name:
@@ -530,7 +531,7 @@ class GamesCog(commands.Cog):
                     break
             if not matched:
                 available = ", ".join(b["name"] for b in self.bot.birds)
-                await interaction.followup.send(f"❌ Bird '{bird_name}' not found!\n**Available:** {available}", ephemeral=True)
+                await interaction.followup.send(f"❌ couldn't find any bird named '{bird_name}'!\n**Available birds:** {available}", ephemeral=True)
                 return
         else:
             core_cog = self.bot.get_cog("CoreCog")
@@ -549,7 +550,7 @@ class GamesCog(commands.Cog):
         except Exception:
             pass
 
-        content_text = f"A wild **{matched['name']}** appeared! Type **bird** to catch it!"
+        content_text = random.choice(BIRD_SPAWN_TEMPLATES).format(name=matched['name'])
         msg = None
         local_img = get_local_bird_image(matched['name'])
         if local_img:
@@ -564,7 +565,7 @@ class GamesCog(commands.Cog):
             msg = await channel.send(content=content_text)
 
         state["msg_obj"] = msg
-        await interaction.followup.send(f"✅ Spawned **{matched['name']}** in {channel.mention}!", ephemeral=True)
+        await interaction.followup.send(f"🦅 spawned a wild **{matched['name']}** in {channel.mention}!", ephemeral=True)
 
     @spawn_command.autocomplete("bird_name")
     async def spawn_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -656,7 +657,7 @@ class GamesCog(commands.Cog):
 
             mods = get_mods(self.bot, guild_id)
             if not mods.get("gambling", True):
-                await interaction.followup.send("❌ Gambling is disabled in this server.", ephemeral=True)
+                await interaction.followup.send("❌ gambling is disabled in this server!", ephemeral=True)
                 return
 
             now = int(time.time())
@@ -666,8 +667,7 @@ class GamesCog(commands.Cog):
                 remaining = cd - (now - last)
                 if remaining > 0:
                     await interaction.followup.send(
-                        f"⏳ You can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s** "
-                        f"(every {cd // 60}m {cd % 60}s).",
+                        f"⏳ slow down! you can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s**.",
                         ephemeral=True
                     )
                     return
@@ -680,7 +680,7 @@ class GamesCog(commands.Cog):
                     break
 
             if not matched_bird_name:
-                await interaction.followup.send(f"❌ Bird '{bird_name}' not found!", ephemeral=True)
+                await interaction.followup.send(f"❌ couldn't find any bird named '{bird_name}'!", ephemeral=True)
                 return
 
             user_birds = self.bot.db.get_inventory(guild_id, user_id)
@@ -688,7 +688,7 @@ class GamesCog(commands.Cog):
 
             if current_count <= 0:
                 await self.unlock_achievement(user_id, "broke_gambler", interaction.channel, guild_id)
-                await interaction.followup.send(f"❌ You don't own any **{matched_bird_name}** to gamble!", ephemeral=True)
+                await interaction.followup.send(f"💀 bro you don't even have any **{matched_bird_name}** to gamble!", ephemeral=True)
                 return
 
             is_all = False
@@ -699,11 +699,11 @@ class GamesCog(commands.Cog):
                 try:
                     number = int(amount)
                 except ValueError:
-                    await interaction.followup.send("❌ Please enter a valid number or 'all'.", ephemeral=True)
+                    await interaction.followup.send("❌ enter a valid number or 'all' to gamble!", ephemeral=True)
                     return
 
             if number <= 0 or number > current_count:
-                await interaction.followup.send(f"❌ Invalid amount! You have {current_count} of this bird.", ephemeral=True)
+                await interaction.followup.send(f"❌ you only have **{current_count}** of that bird!", ephemeral=True)
                 return
 
             if number > 20:
@@ -736,7 +736,7 @@ class GamesCog(commands.Cog):
                 self.check_stat_achievements(interaction.user.id, interaction.guild.id, interaction.channel)
 
                 embed = discord.Embed(
-                    title="🎰 Gamble Successful!",
+                    title="🎰 BIG WIN!",
                     description=f"🎉 **{interaction.user.mention}** won the gamble and {mult_txt} (**{number}x {matched_bird_name}**)",
                     color=discord.Color.green()
                 )
@@ -773,14 +773,14 @@ class GamesCog(commands.Cog):
                 if is_all:
                     await self.unlock_achievement(user_id, "its_over", interaction.channel, guild_id)
 
-                description = f"💀 **{interaction.user.mention}** lost the gamble and their **{number}x {matched_bird_name}** are gone..."
+                description = f"💀 **{interaction.user.mention}** just lost the bet... **{number}x {matched_bird_name}** went straight down the drain 😭"
                 if shield_broke:
-                    description += "\n💔 **Your shield broke and couldn't protect your birds!**"
+                    description += "\n💔 **your shield shattered and couldn't protect your birds!**"
                 elif shield_saved:
-                    description += "\n🛡️ **Your shield protected your birds!**"
+                    description += "\n🛡️ **clutch! your shield took the hit and saved your birds!**"
 
                 embed = discord.Embed(
-                    title="🎰 Gamble Lost!",
+                    title="🎰 R.I.P.",
                     description=description,
                     color=discord.Color.red()
                 )
@@ -804,7 +804,7 @@ class GamesCog(commands.Cog):
 
             mods = get_mods(self.bot, guild_id)
             if not mods.get("gambling", True):
-                await interaction.followup.send("❌ Gambling is disabled in this server.", ephemeral=True)
+                await interaction.followup.send("❌ gambling is disabled in this server!", ephemeral=True)
                 return
 
             now = int(time.time())
@@ -814,8 +814,7 @@ class GamesCog(commands.Cog):
                 remaining = cd - (now - last)
                 if remaining > 0:
                     await interaction.followup.send(
-                        f"⏳ You can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s** "
-                        f"(every {cd // 60}m {cd % 60}s).",
+                        f"⏳ slow down! you can gamble again in **{max(1, remaining // 60)}m {max(0, remaining % 60)}s**.",
                         ephemeral=True
                     )
                     return
@@ -824,7 +823,7 @@ class GamesCog(commands.Cog):
             user_birds = self.bot.db.get_inventory(guild_id, user_id)
             if not user_birds:
                 await self.unlock_achievement(user_id, "broke_gambler", interaction.channel, guild_id)
-                await interaction.followup.send("❌ Your inventory is empty!", ephemeral=True)
+                await interaction.followup.send("💀 your inventory is completely empty, go catch some birds first!", ephemeral=True)
                 return
 
             counts = Counter(user_birds)
@@ -848,9 +847,9 @@ class GamesCog(commands.Cog):
                     f"{name} ×{count} ➜ ×{count * 2}" for name, count in counts.most_common(30)
                 )
                 embed = discord.Embed(
-                    title="🎰 Gamble All — WIN!",
+                    title="🎰 Gamble All — MASSIVE WIN!",
                     description=(
-                        f"🎉 **{interaction.user.mention}** gambled their **entire inventory** and doubled it!\n"
+                        f"🔥 **{interaction.user.mention}** gambled their **entire inventory** and doubled everything!\n"
                         f"**{total}** birds ➜ **{total * 2}** birds\n\n{summary}"
                     ),
                     color=discord.Color.green()
@@ -866,9 +865,9 @@ class GamesCog(commands.Cog):
                     f"{name} ×{count}" for name, count in counts.most_common(30)
                 )
                 embed = discord.Embed(
-                    title="🎰 Gamble All — LOST!",
+                    title="🎰 Gamble All — COMPLETE WIPEOUT!",
                     description=(
-                        f"💀 **{interaction.user.mention}** gambled their **entire inventory** and lost it all!\n"
+                        f"💀 **{interaction.user.mention}** gambled their **entire inventory** and lost every single bird... R.I.P.\n"
                         f"**{total}** birds are gone.\n\n{summary}"
                     ),
                     color=discord.Color.red()
@@ -889,15 +888,15 @@ class GamesCog(commands.Cog):
                 return
 
             if member.bot:
-                await interaction.followup.send("❌ You cannot gift birds to bots!", ephemeral=True)
+                await interaction.followup.send("🤖 bots don't collect birds! gift it to a real person.", ephemeral=True)
                 return
 
             if member.id == interaction.user.id:
-                await interaction.followup.send("❌ You cannot gift birds to yourself!", ephemeral=True)
+                await interaction.followup.send("🤔 gifting birds to yourself? nice try, but no.", ephemeral=True)
                 return
 
             if number <= 0:
-                await interaction.followup.send("❌ You must gift at least 1 bird!", ephemeral=True)
+                await interaction.followup.send("❌ you gotta gift at least 1 bird!", ephemeral=True)
                 return
 
             matched_bird = None
@@ -907,7 +906,7 @@ class GamesCog(commands.Cog):
                     break
 
             if not matched_bird:
-                await interaction.followup.send(f"❌ Bird '{bird_name}' not found!", ephemeral=True)
+                await interaction.followup.send(f"❌ couldn't find any bird named '{bird_name}'!", ephemeral=True)
                 return
 
             matched_bird_name = matched_bird["name"]
@@ -924,7 +923,7 @@ class GamesCog(commands.Cog):
             )
             if len(moved) < number:
                 await interaction.followup.send(
-                     f"❌ You don't have enough **{matched_bird_name}**! You have `{len(moved)}`.",
+                     f"❌ you don't have enough **{matched_bird_name}**! you only have `{len(moved)}`.",
                     ephemeral=True,
                 )
                 return
@@ -940,8 +939,8 @@ class GamesCog(commands.Cog):
                     await self.unlock_achievement(interaction.user.id, "generous_rare", interaction.channel, guild_id)
 
             embed = discord.Embed(
-                title="🎁 Bird Gifted!",
-                 description=f"✅ {interaction.user.mention} gifted **{number}x {matched_bird_name}** to {member.mention}!",
+                title="🎁 Gift Delivered!",
+                 description=f"✨ **{interaction.user.mention}** just handed over **{number}x {matched_bird_name}** to **{member.mention}**! what a legend.",
                 color=discord.Color.blue()
             )
             await interaction.followup.send(embed=embed)

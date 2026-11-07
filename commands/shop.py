@@ -154,7 +154,7 @@ class ShopCog(commands.Cog):
             None,
         )
         if not canon:
-            await interaction.followup.send("❌ No bird has that name! Check /droprates.", ephemeral=True)
+            await interaction.followup.send("❌ no bird has that name! check `/droprates` to see valid birds.", ephemeral=True)
             return
 
         guild_id = interaction.guild.id
@@ -167,7 +167,7 @@ class ShopCog(commands.Cog):
             try:
                 n = int(count_txt)
             except ValueError:
-                await interaction.followup.send("❌ Count must be a number or 'all'!", ephemeral=True)
+                await interaction.followup.send("❌ count has to be a number or 'all'!", ephemeral=True)
                 return
             if n < 1:
                 await interaction.followup.send("❌ Count must be at least 1!", ephemeral=True)
@@ -179,7 +179,7 @@ class ShopCog(commands.Cog):
             await interaction.followup.send("❌ Something went wrong while selling. Try again!", ephemeral=True)
             return
         if sold <= 0:
-            await interaction.followup.send(f"❌ You don't have **{canon}** to sell!", ephemeral=True)
+            await interaction.followup.send(f"💀 bro you don't have any **{canon}** to sell!", ephemeral=True)
             return
         owned = sold + remaining
 
@@ -251,10 +251,10 @@ class ShopCog(commands.Cog):
             return
 
         if member.id == interaction.user.id:
-            await interaction.followup.send("❌ You can't send BirdCoin to yourself!", ephemeral=True)
+            await interaction.followup.send("🤔 sending coins to yourself? nice try, but no.", ephemeral=True)
             return
         if member.id == self.bot.user.id:
-            await interaction.followup.send("❌ You can't send BirdCoin to the bot!", ephemeral=True)
+            await interaction.followup.send("🤖 bots don't need BirdCoins, keep 'em or send to a friend!", ephemeral=True)
             return
 
         try:
@@ -323,7 +323,7 @@ class ShopCog(commands.Cog):
         user_id = interaction.user.id
 
         if not get_mods(self.bot, guild_id).get("powerups", True):
-            await interaction.followup.send("❌ Powerups are disabled in this server.", ephemeral=True)
+            await interaction.followup.send("❌ powerups are disabled in this server!", ephemeral=True)
             return
 
         view = ShopCartView(self.bot, self, guild_id, user_id)

@@ -419,17 +419,17 @@ class SocialCog(commands.Cog):
             return
 
         if member.bot or member == interaction.user:
-            await interaction.followup.send("❌ You can't trade with bots or yourself!", ephemeral=True)
+            await interaction.followup.send("❌ you can't trade with bots or yourself!", ephemeral=True)
             return
 
         guild_id = interaction.guild.id
 
         if not get_mods(self.bot, guild_id).get("trading", True):
-            await interaction.followup.send("❌ Trading is disabled in this server.", ephemeral=True)
+            await interaction.followup.send("❌ trading is turned off in this server!", ephemeral=True)
             return
 
         view = TradeRequestView(self.bot, interaction.user, member, str(guild_id))
-        await interaction.followup.send(content=f"🤝 {member.mention}, you have received a trade request from **{interaction.user.name}**!", view=view)
+        await interaction.followup.send(content=f"🤝 {member.mention}, **{interaction.user.name}** wants to trade with you!", view=view)
 
     @discord.app_commands.command(name="dm", description="Sends you a direct message")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
@@ -440,7 +440,7 @@ class SocialCog(commands.Cog):
             await interaction.user.send("hey")
             await interaction.followup.send("✨ Check your DMs!", ephemeral=True)
         except discord.Forbidden:
-            await interaction.followup.send("❌ Couldn't send you a DM. Check your privacy settings.", ephemeral=True)
+            await interaction.followup.send("❌ couldn't slide into your DMs! check your privacy settings.", ephemeral=True)
 
     @discord.app_commands.command(name="say", description="Send a custom message as the bot (Owner only)")
     @discord.app_commands.allowed_installs(guilds=True, users=True)

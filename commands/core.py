@@ -27,6 +27,29 @@ def get_local_bird_image(bird_name):
                 return os.path.join(birds_dir, fname)
     return None
 
+
+BIRD_SPAWN_TEMPLATES = [
+    "yo a wild **{name}** just pulled up! type **bird** to snatch it!",
+    "look out, a wild **{name}** flew in! type **bird** fast!",
+    "a wild **{name}** appeared! quick, type **bird** to catch it!",
+    "yo wait, is that a wild **{name}**?! type **bird** before it dips!",
+    "a wild **{name}** landed! type **bird** to grab it!",
+]
+
+POOP_SPAWN_TEMPLATES = [
+    "{emoji} ew watch out, a wild **Birdpoop** dropped! type **skip** to sweep it, don't touch it!",
+    "{emoji} yo someone dropped **Birdpoop** right here! type **skip** to clean it up!",
+    "{emoji} gross, a pile of **Birdpoop** appeared! whatever you do, type **skip** not bird!",
+    "{emoji} look at the floor... that's fresh **Birdpoop**! type **skip** to avoid getting dirty!",
+]
+
+CATCH_TEMPLATES = [
+    "🎉 **{mention}** snatched the **{bird}** in **{time}**!{extra}",
+    "⚡ clean catch! **{mention}** got the **{bird}** in **{time}**!{extra}",
+    "🔥 **{mention}** caught that **{bird}** in **{time}**! nice reflexes!{extra}",
+    "🦅 **{mention}** grabbed the **{bird}** in **{time}**! ez!{extra}",
+]
+
 def generate_math_question():
     a = random.randint(2, 12)
     b = random.randint(2, 9)
@@ -278,7 +301,7 @@ class CoreCog(commands.Cog):
 
             emoji_str = await self._get_poop_emoji_str(guild)
 
-            content_text = f"{emoji_str} A wild **Birdpoop** appeared! Type **bird** to catch it!"
+            content_text = random.choice(POOP_SPAWN_TEMPLATES).format(emoji=emoji_str)
             try:
                 msg = await channel.send(content=content_text)
                 state["msg_obj"] = msg
@@ -306,7 +329,7 @@ class CoreCog(commands.Cog):
         except Exception:
             pass
 
-        content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
+        content_text = random.choice(BIRD_SPAWN_TEMPLATES).format(name=bird['name'])
         try:
             local_img = get_local_bird_image(bird['name'])
             if local_img:
@@ -372,7 +395,7 @@ class CoreCog(commands.Cog):
             except Exception:
                 pass
 
-            content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
+            content_text = random.choice(BIRD_SPAWN_TEMPLATES).format(name=bird['name'])
             if source:
                 content_text += f" *({source})*"
             local_img = get_local_bird_image(bird['name'])
@@ -475,12 +498,12 @@ class CoreCog(commands.Cog):
                 msg_obj = state.get("msg_obj")
                 if msg_obj:
                     try:
-                        await msg_obj.edit(content=msg_obj.content + " **(Cleaned up)**")
+                        await msg_obj.edit(content=msg_obj.content + " **(Swept away 🧹)**")
                     except Exception:
                         pass
 
                 emoji_str = await self._get_poop_emoji_str(message.guild)
-                await message.reply(f"🧹 **{message.author.mention}** cleaned up and skipped the {emoji_str} **birdpoop**! Safe!")
+                await message.reply(f"🧹 clean sweep! **{message.author.mention}** swept the {emoji_str} **birdpoop** away just in time! safe!")
             return
 
         if content_lower not in ("bird", "pip"):
@@ -505,14 +528,14 @@ class CoreCog(commands.Cog):
             msg_obj = state.get("msg_obj")
             if msg_obj:
                 try:
-                    await msg_obj.edit(content=msg_obj.content + " **(Gross! Stepped in poop)**")
+                    await msg_obj.edit(content=msg_obj.content + " **(Someone stepped in it 💀)**")
                 except Exception:
                     pass
 
             self.bot.db.set_poop_penalty(guild_id_int, user_id_int, 1)
             emoji_str = await self._get_poop_emoji_str(message.guild)
             await message.reply(
-                f"🤢 **YUCK!** {message.author.mention} tried to catch the {emoji_str} **birdpoop**!\nYour hands are all dirty — you **cannot catch the next bird**! 💩"
+                f"💀 bro {message.author.mention} really just tried to grab {emoji_str} **bird poop** with their bare hands... you're covered in it! no birds for your next catch lmfao 💩"
             )
             return
 
@@ -528,11 +551,11 @@ class CoreCog(commands.Cog):
             emoji_str = await self._get_poop_emoji_str(message.guild)
             if remaining > 0:
                 await message.reply(
-                    f"{emoji_str} **{message.author.mention}**, your hands are still dirty from birdpoop! You couldn't catch the bird! *(**{remaining}** {catches_word} remaining on your penalty)*"
+                    f"{emoji_str} bro {message.author.mention}, your hands are still nasty from bird poop! you fumbled the bird! ({remaining} {catches_word} left on your penalty)"
                 )
             else:
                 await message.reply(
-                    f"✨ **{message.author.mention}**, you tried to catch the bird with dirty hands and missed, but your hands are now clean! *(Penalty ended! You can catch birds starting next spawn)*"
+                    f"🧼 you slipped and missed the bird cause your hands were still dirty {message.author.mention}, but at least you washed them now! you're clean for the next spawn ✨"
                 )
             return
 
@@ -545,19 +568,19 @@ class CoreCog(commands.Cog):
             state["active"] = False
             state["name"] = None
             self._schedule_next_spawn(guild_id)
-            await message.reply("💨 **The bird got spooked and flew away!** *(Distraction)*")
+            await message.reply("💨 the bird got spooked and flew away! *(distraction powerup)*")
             return
 
         if caught_bird == "Duolingo Bird":
             if state.get("pending_user") and state["pending_user"] != user_id:
-                await message.reply("⏳ The **Duolingo Bird** is already being questioned — one at a time!")
+                await message.reply("⏳ hold on, someone is already taking the **Duolingo Bird** math test! wait your turn!")
                 return
             state["pending_user"] = user_id
 
             expr, answer = generate_math_question()
             await message.reply(
-                f"🧮 **{message.author.mention}** a **Duolingo Bird** appeared, but it only accepts mathematicians!\n"
-                f"Solve to catch it:\n**{expr}**"
+                f"🧮 yo {message.author.mention}, the **Duolingo Bird** won't let you catch it unless you do some quick math!\n"
+                f"Solve this:\n**{expr}**"
             )
 
             def check(m):
@@ -585,7 +608,7 @@ class CoreCog(commands.Cog):
                 state["name"] = None
                 state["pending_user"] = None
                 self._schedule_next_spawn(guild_id)
-                await message.channel.send("⏰ Time's up! The **Duolingo Bird** flew away!")
+                await message.channel.send("⏰ time's up! the **Duolingo Bird** got bored and flew away!")
                 return
 
             if user_answer != answer:
@@ -593,11 +616,11 @@ class CoreCog(commands.Cog):
                 state["name"] = None
                 state["pending_user"] = None
                 self._schedule_next_spawn(guild_id)
-                await correct_msg.reply(f"❌ Wrong! The answer was **{answer}**. The **Duolingo Bird** flew away!")
+                await correct_msg.reply(f"❌ nah that ain't it, the answer was **{answer}**! the **Duolingo Bird** flew away laughing at you")
                 return
 
             state["pending_user"] = None
-            await correct_msg.reply("✅ Correct! The **Duolingo Bird** is caught!")
+            await correct_msg.reply("✅ let's go! you solved it and caught the **Duolingo Bird**!")
 
         if user_id not in self.bot.fastest_times or catch_duration < self.bot.fastest_times[user_id]:
             self.bot.fastest_times[user_id] = catch_duration
@@ -642,7 +665,7 @@ class CoreCog(commands.Cog):
         msg_obj = state.get("msg_obj")
         if msg_obj:
             try:
-                await msg_obj.edit(content=msg_obj.content + " **(Collected)**")
+                await msg_obj.edit(content=msg_obj.content + " **(Caught)**")
             except Exception:
                 pass
 
@@ -661,7 +684,13 @@ class CoreCog(commands.Cog):
             if abs(catch_duration - round(catch_duration)) < 0.05
             else f"{catch_duration:.2f}s"
         )
-        await message.reply(f"🎉 **{message.author.mention}** caught the **{caught_bird}** in **{time_text}**!{extra}")
+        catch_msg = random.choice(CATCH_TEMPLATES).format(
+            mention=message.author.mention,
+            bird=caught_bird,
+            time=time_text,
+            extra=extra
+        )
+        await message.reply(catch_msg)
 
     @discord.app_commands.command(name="help", description="Show bot commands")
     @discord.app_commands.allowed_installs(guilds=True, users=True)
