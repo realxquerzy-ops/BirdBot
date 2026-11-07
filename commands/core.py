@@ -28,21 +28,6 @@ def get_local_bird_image(bird_name):
     return None
 
 
-BIRD_SPAWN_TEMPLATES = [
-    "yo a wild **{name}** just pulled up! type **bird** to snatch it!",
-    "look out, a wild **{name}** flew in! type **bird** fast!",
-    "a wild **{name}** appeared! quick, type **bird** to catch it!",
-    "yo wait, is that a wild **{name}**?! type **bird** before it dips!",
-    "a wild **{name}** landed! type **bird** to grab it!",
-]
-
-POOP_SPAWN_TEMPLATES = [
-    "{emoji} ew watch out, a wild **Birdpoop** dropped! type **skip** to sweep it, don't touch it!",
-    "{emoji} yo someone dropped **Birdpoop** right here! type **skip** to clean it up!",
-    "{emoji} gross, a pile of **Birdpoop** appeared! whatever you do, type **skip** not bird!",
-    "{emoji} look at the floor... that's fresh **Birdpoop**! type **skip** to avoid getting dirty!",
-]
-
 CATCH_TEMPLATES = [
     "🎉 **{mention}** snatched the **{bird}** in **{time}**!{extra}",
     "⚡ clean catch! **{mention}** got the **{bird}** in **{time}**!{extra}",
@@ -301,7 +286,7 @@ class CoreCog(commands.Cog):
 
             emoji_str = await self._get_poop_emoji_str(guild)
 
-            content_text = random.choice(POOP_SPAWN_TEMPLATES).format(emoji=emoji_str)
+            content_text = f"{emoji_str} A wild **Birdpoop** appeared! Type **bird** to catch it!"
             try:
                 msg = await channel.send(content=content_text)
                 state["msg_obj"] = msg
@@ -329,7 +314,7 @@ class CoreCog(commands.Cog):
         except Exception:
             pass
 
-        content_text = random.choice(BIRD_SPAWN_TEMPLATES).format(name=bird['name'])
+        content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
         try:
             local_img = get_local_bird_image(bird['name'])
             if local_img:
@@ -395,7 +380,7 @@ class CoreCog(commands.Cog):
             except Exception:
                 pass
 
-            content_text = random.choice(BIRD_SPAWN_TEMPLATES).format(name=bird['name'])
+            content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
             if source:
                 content_text += f" *({source})*"
             local_img = get_local_bird_image(bird['name'])

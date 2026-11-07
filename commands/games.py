@@ -7,7 +7,6 @@ import discord
 from discord.ext import commands
 
 from mods import get_mods
-from commands.core import BIRD_SPAWN_TEMPLATES, POOP_SPAWN_TEMPLATES
 
 
 def get_local_bird_image(bird_name):
@@ -517,7 +516,7 @@ class GamesCog(commands.Cog):
             state["is_birdpoop"] = True
             state["failed_users"] = set()
             emoji_str = await self._get_poop_emoji_str(interaction.guild)
-            content_text = random.choice(POOP_SPAWN_TEMPLATES).format(emoji=emoji_str)
+            content_text = f"{emoji_str} A wild **Birdpoop** appeared! Type **bird** to catch it!"
             msg = await channel.send(content=content_text)
             state["msg_obj"] = msg
             await interaction.followup.send(f"💩 dropped fresh **birdpoop** into {channel.mention}!", ephemeral=True)
@@ -550,7 +549,7 @@ class GamesCog(commands.Cog):
         except Exception:
             pass
 
-        content_text = random.choice(BIRD_SPAWN_TEMPLATES).format(name=matched['name'])
+        content_text = f"A wild **{matched['name']}** appeared! Type **bird** to catch it!"
         msg = None
         local_img = get_local_bird_image(matched['name'])
         if local_img:
