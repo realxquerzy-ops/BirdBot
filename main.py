@@ -408,6 +408,19 @@ SEED_CODES = {
         "birds": [{"name": "King Bird", "count": 1}, {"name": "Emerald Bird", "count": 1}],
         "powerups": {"bigger_net": 2, "shield": 1},
     },
+    "birdbot": {
+        "coins": 150,
+        "powerups": {"scarecrow": 1, "golden_gut": 1},
+    },
+    "starter": {
+        "coins": 150,
+        "powerups": {"bigger_net": 1},
+        "birds": [{"name": "Bird", "count": 2}, {"name": "Good Bird", "count": 1}],
+    },
+    "bird": {
+        "coins": 25,
+        "birds": [{"name": "Bird", "count": 1}],
+    },
 }
 for _code, _rewards in SEED_CODES.items():
     db.add_redeem_code(_code, 0, _rewards, unlimited=True)
