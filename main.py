@@ -531,7 +531,12 @@ async def _self_ping_loop():
 start_server()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-if not TOKEN:
+if os.getenv("SKIP_DISCORD", "").strip().lower() in ("1", "true", "yes", "on"):
+    logging.warning("[startup] SKIP_DISCORD set; web server only, no Discord connection.")
+    import time as _t
+    while True:
+        _t.sleep(3600)
+elif not TOKEN:
     print("❌ HATA: DISCORD_TOKEN bulunamadı! Lütfen Railway Variables kısmına ekleyin.")
 else:
     try:
