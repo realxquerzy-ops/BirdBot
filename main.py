@@ -541,7 +541,10 @@ else:
             break
         except discord.HTTPException as e:
             retry += 1
-            wait = min(300, 20 * (2 ** (retry - 1))) + random.uniform(0, 5)
+            if e.status == 429:
+                wait = min(1800, 120 * (2 ** (retry - 1))) + random.uniform(0, 10)
+            else:
+                wait = min(300, 20 * (2 ** (retry - 1))) + random.uniform(0, 5)
             print(f"[startup] Discord API error (HTTP {e.status}): {e}. Retrying login in {wait:.0f}s (attempt {retry})")
             time.sleep(wait)
         except KeyboardInterrupt:
