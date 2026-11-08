@@ -534,29 +534,14 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     print("❌ HATA: DISCORD_TOKEN bulunamadı! Lütfen Railway Variables kısmına ekleyin.")
 else:
-    retry = 0
-    while True:
-        try:
-            bot.run(TOKEN, reconnect=True)
-            break
-        except discord.HTTPException as e:
-            retry += 1
-            if e.status == 429:
-                wait = min(1800, 120 * (2 ** (retry - 1))) + random.uniform(0, 10)
-            else:
-                wait = min(300, 20 * (2 ** (retry - 1))) + random.uniform(0, 5)
-            logging.error("[startup] Discord API error (HTTP %s): %s. Retrying login in %.0fs (attempt %d)", e.status, e, wait, retry)
-            import sys as _sys
-            _sys.stderr.flush()
-            time.sleep(wait)
-        except KeyboardInterrupt:
-            break
-        except SystemExit:
-            raise
-        except Exception as e:
-            retry += 1
-            wait = min(300, 20 * (2 ** (retry - 1))) + random.uniform(0, 5)
-            logging.error("[startup] Unexpected error: %s. Restarting bot in %.0fs (attempt %d)", e, wait, retry)
-            import sys as _sys
-            _sys.stderr.flush()
-            time.sleep(wait)
+    try:
+        bot.run(TOKEN, reconnect=True)
+    except KeyboardInterrupt:
+        pass
+    except SystemExit:
+        raise
+    except Exception as e:
+        logging.error("[startup] Bot exited: %s. Render will restart the service.", e)
+        import sys as _sys
+        _sys.stderr.flush()
+        raise
