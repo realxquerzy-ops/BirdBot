@@ -256,6 +256,8 @@ intents.message_content = True
 intents.presences = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+bot._commands_synced = False
+bot._sync_backoff_until = 0.0
 
 bot.presence_cache = {}
 
@@ -329,11 +331,22 @@ async def on_ready():
         bot.app_emojis = []
         logging.warning("[emojis] Failed to fetch application emojis: %s", e)
 
-    try:
-        synced = await bot.tree.sync()
-        logging.info("%s global komut senkronize edildi.", len(synced))
-    except Exception as e:
-        logging.error("Senkronizasyon hatası: %s", e)
+    import time as _t
+    if getattr(bot, "_commands_synced", False):
+        logging.info("komutlar zaten senkronize, atlandi")
+    elif _t.time() < getattr(bot, "_sync_backoff_until", 0):
+        logging.warning("rate-limit backoff, tree.sync atlandi")
+    else:
+        try:
+            synced = await bot.tree.sync()
+            bot._commands_synced = True
+            logging.info("%s global komut senkronize edildi.", len(synced))
+        except Exception as e:
+            if "429" in str(e) or "Too Many Requests" in str(e):
+                bot._sync_backoff_until = _t.time() + 300
+                logging.warning("tree.sync rate limited, 5 dk backoff")
+            else:
+                logging.error("Senkronizasyon hatası: %s", e)
 
     # BirdBot'a tüm başarımları kilitle (leaderboard'larda görünmez, envanter gibi)
     games_cog = bot.get_cog("GamesCog")
