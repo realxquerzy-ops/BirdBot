@@ -80,6 +80,7 @@ class CoreCog(commands.Cog):
             self.bot.last_active = {}
         self.spawn_weights = [float(bird["weight"]) for bird in self.bot.birds]
         self.next_spawn_times = {}
+        self._channel_cache = {}
         self.bird_spawner.start()
         self.birdfood_spawner.start()
 
@@ -267,13 +268,22 @@ class CoreCog(commands.Cog):
 
         state["from_whistle"] = False
 
-        channel = self.bot.get_channel(int(channel_id))
+        cid = int(channel_id)
+        channel = self.bot.get_channel(cid)
         if not channel:
-            try:
-                channel = await self.bot.fetch_channel(int(channel_id))
-            except Exception as e:
-                self.log.error("fetch_channel fail for %s: %s", guild.name, e)
-                return
+            if cid in self._channel_cache:
+                cached = self._channel_cache[cid]
+                if cached is None:
+                    return
+                channel = cached
+            else:
+                try:
+                    channel = await self.bot.fetch_channel(cid)
+                    self._channel_cache[cid] = channel
+                except Exception as e:
+                    self.log.error("fetch_channel fail for %s: %s", guild.name, e)
+                    self._channel_cache[cid] = None
+                    return
 
         # 5% chance to spawn birdpoop
         if random.random() < 0.05:
