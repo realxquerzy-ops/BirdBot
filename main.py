@@ -545,7 +545,9 @@ else:
                 wait = min(1800, 120 * (2 ** (retry - 1))) + random.uniform(0, 10)
             else:
                 wait = min(300, 20 * (2 ** (retry - 1))) + random.uniform(0, 5)
-            print(f"[startup] Discord API error (HTTP {e.status}): {e}. Retrying login in {wait:.0f}s (attempt {retry})")
+            logging.error("[startup] Discord API error (HTTP %s): %s. Retrying login in %.0fs (attempt %d)", e.status, e, wait, retry)
+            import sys as _sys
+            _sys.stderr.flush()
             time.sleep(wait)
         except KeyboardInterrupt:
             break
@@ -554,5 +556,7 @@ else:
         except Exception as e:
             retry += 1
             wait = min(300, 20 * (2 ** (retry - 1))) + random.uniform(0, 5)
-            print(f"[startup] Unexpected error: {e}. Restarting bot in {wait:.0f}s (attempt {retry})")
+            logging.error("[startup] Unexpected error: %s. Restarting bot in %.0fs (attempt %d)", e, wait, retry)
+            import sys as _sys
+            _sys.stderr.flush()
             time.sleep(wait)
