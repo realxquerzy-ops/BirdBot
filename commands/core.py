@@ -81,6 +81,9 @@ class CoreCog(commands.Cog):
         self.spawn_weights = [float(bird["weight"]) for bird in self.bot.birds]
         self.next_spawn_times = {}
         self._channel_cache = {}
+        self._sticker_cache = {}
+        self._emoji_cache = None
+        self._rate_limited_until = 0.0
         self.bird_spawner.start()
         self.birdfood_spawner.start()
 
@@ -89,29 +92,36 @@ class CoreCog(commands.Cog):
         self.birdfood_spawner.cancel()
 
     async def _get_poop_emoji_str(self, guild=None):
+        if self._emoji_cache is not None:
+            return self._emoji_cache
         # 1. Check cached application emojis from Discord Developer Portal
         for e in getattr(self.bot, "app_emojis", []):
             if e.name.lower() == "birdpoop":
-                return str(e)
+                self._emoji_cache = str(e)
+                return self._emoji_cache
         # 2. Try fetching application emojis from API
         try:
             app_emojis = await self.bot.fetch_application_emojis()
             self.bot.app_emojis = app_emojis
             for e in app_emojis:
                 if e.name.lower() == "birdpoop":
-                    return str(e)
+                    self._emoji_cache = str(e)
+                    return self._emoji_cache
         except Exception:
             pass
         # 3. Check guild emojis
         if guild:
             for e in guild.emojis:
                 if e.name.lower() == "birdpoop":
-                    return str(e)
+                    self._emoji_cache = str(e)
+                    return self._emoji_cache
         # 4. Check mutual guild emojis
         for e in self.bot.emojis:
             if e.name.lower() == "birdpoop":
-                return str(e)
-        return "💩"
+                self._emoji_cache = str(e)
+                return self._emoji_cache
+        self._emoji_cache = "💩"
+        return self._emoji_cache
 
     def _new_spawn_state(self):
         return {"active": False, "name": None, "spawn_time": None, "msg_obj": None, "pending_user": None, "from_whistle": False, "is_birdpoop": False, "failed_users": set()}
@@ -210,6 +220,8 @@ class CoreCog(commands.Cog):
     async def bird_spawner(self):
         try:
             now = time.time()
+            if now < self._rate_limited_until:
+                return
             try:
                 self.bot.server_settings = self.bot.db.get_server_settings()
             except Exception as e:
@@ -219,6 +231,10 @@ class CoreCog(commands.Cog):
                 try:
                     await self._spawn_for_guild(guild_id, now)
                 except Exception as e:
+                    if "429" in str(e) or "Too Many Requests" in str(e):
+                        self._rate_limited_until = time.time() + 300
+                        self.log.warning("rate limited, pausing spawner for 5 min")
+                        return
                     self.log.error("Error in spawner: %s", e)
         except Exception as e:
             self.log.error("bird_spawner unexpected error (kept alive): %s", e)
@@ -227,9 +243,11 @@ class CoreCog(commands.Cog):
     async def bird_spawner_error(self, exc):
         self.log.error("bird_spawner iteration crashed: %s", exc)
 
-    @tasks.loop(seconds=2.0)
+    @tasks.loop(seconds=5.0)
     async def birdfood_spawner(self):
         try:
+            if time.time() < self._rate_limited_until:
+                return
             powerups_cog = self.bot.get_cog("PowerupsCog")
             if powerups_cog is None:
                 return
@@ -240,6 +258,10 @@ class CoreCog(commands.Cog):
                 try:
                     await self._spawn_for_guild(guild_id, now)
                 except Exception as e:
+                    if "429" in str(e) or "Too Many Requests" in str(e):
+                        self._rate_limited_until = time.time() + 300
+                        self.log.warning("rate limited, pausing spawner for 5 min")
+                        return
                     self.log.error("Error in birdfood spawner: %s", e)
         except Exception as e:
             self.log.error("birdfood_spawner unexpected error (kept alive): %s", e)
@@ -319,10 +341,16 @@ class CoreCog(commands.Cog):
         state["failed_users"] = set()
 
         sticker = None
-        try:
-            sticker = await self.bot.fetch_sticker(bird["sticker_id"])
-        except Exception:
-            pass
+        sid = bird.get("sticker_id")
+        if sid:
+            if sid in self._sticker_cache:
+                sticker = self._sticker_cache[sid]
+            else:
+                try:
+                    sticker = await self.bot.fetch_sticker(sid)
+                    self._sticker_cache[sid] = sticker
+                except Exception:
+                    self._sticker_cache[sid] = None
 
         content_text = f"A wild **{bird['name']}** appeared! Type **bird** to catch it!"
         try:
