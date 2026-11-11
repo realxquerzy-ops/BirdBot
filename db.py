@@ -23,6 +23,9 @@ class Database:
         if not self._is_neon_pooler:
             kwargs["options"] = "-c statement_timeout=5000 -c lock_timeout=3000"
         self._pool = ThreadedConnectionPool(2, 6, database_url, **kwargs)
+        self._bans_global_cache = None
+        self._bans_guild_cache = None
+        self._bans_cache_time = 0
 
     def close(self):
         self._pool.closeall()
@@ -345,24 +348,49 @@ class Database:
         )
 
     def ban_birdbot(self, guild_id, user_id):
+        self._bans_global_cache = None
         self.execute(
             "INSERT INTO birdbot_bans (guild_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
             (int(guild_id), int(user_id)),
         )
 
     def unban_birdbot(self, guild_id, user_id):
+        self._bans_global_cache = None
         self.execute(
             "DELETE FROM birdbot_bans WHERE guild_id = %s AND user_id = %s",
             (int(guild_id), int(user_id)),
         )
 
     def unban_birdbot_global(self, user_id):
+        self._bans_global_cache = None
         self.execute(
             "DELETE FROM birdbot_bans WHERE user_id = %s",
             (int(user_id),),
         )
 
+    def _refresh_bans_cache(self):
+        try:
+            global_set, guild_map = self.get_all_bans_map()
+            self._bans_global_cache = global_set
+            self._bans_guild_cache = guild_map
+            self._bans_cache_time = time.time()
+        except Exception:
+            pass
+
     def is_user_banned(self, guild_id, user_id):
+        now = time.time()
+        if self._bans_global_cache is None or (now - self._bans_cache_time > 120):
+            self._refresh_bans_cache()
+
+        if self._bans_global_cache is not None:
+            uid = int(user_id)
+            if uid in self._bans_global_cache:
+                return True
+            gid = int(guild_id)
+            if gid in self._bans_guild_cache and uid in self._bans_guild_cache[gid]:
+                return True
+            return False
+
         row = self.fetchone(
             "SELECT 1 FROM birdbot_bans WHERE user_id = %s AND (guild_id = 0 OR guild_id = %s) LIMIT 1",
             (int(user_id), int(guild_id)),
@@ -821,6 +849,28 @@ class Database:
             """,
             (guild_id, user_id, json.dumps(birds), int(level), float(accumulated)),
         )
+
+    def save_birdcages_batch(self, cages):
+        if not cages:
+            return
+        args_str = ",".join("(%s, %s, %s, %s, %s)" for _ in cages)
+        params = []
+        for c in cages:
+            params.extend([
+                int(c["guild_id"]),
+                int(c["user_id"]),
+                json.dumps(c["birds"]),
+                int(c["level"]),
+                float(c["accumulated"]),
+            ])
+        sql = f"""
+            INSERT INTO birdcage (guild_id, user_id, birds, level, accumulated) VALUES {args_str}
+            ON CONFLICT (guild_id, user_id) DO UPDATE SET
+                birds = EXCLUDED.birds,
+                level = EXCLUDED.level,
+                accumulated = EXCLUDED.accumulated
+        """
+        self.execute(sql, tuple(params))
 
     def get_all_birdcages(self):
         rows = self.fetchall(

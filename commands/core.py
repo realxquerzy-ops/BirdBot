@@ -222,10 +222,12 @@ class CoreCog(commands.Cog):
             now = time.time()
             if now < self._rate_limited_until:
                 return
-            try:
-                self.bot.server_settings = self.bot.db.get_server_settings()
-            except Exception as e:
-                self.log.error("spawner: settings refresh failed, using cached: %s", e)
+            if now - getattr(self, "_last_settings_refresh", 0) > 300 or not getattr(self.bot, "server_settings", None):
+                try:
+                    self.bot.server_settings = self.bot.db.get_server_settings()
+                    self._last_settings_refresh = now
+                except Exception as e:
+                    self.log.error("spawner: settings refresh failed, using cached: %s", e)
 
             for guild_id, _ in list(getattr(self.bot, "server_settings", {}).items()):
                 try:
@@ -302,6 +304,11 @@ class CoreCog(commands.Cog):
                 try:
                     channel = await self.bot.fetch_channel(cid)
                     self._channel_cache[cid] = channel
+                except discord.NotFound:
+                    self.log.warning("fetch_channel 404 for %s: channel %s deleted, removing from active spawns", guild.name, cid)
+                    self._channel_cache[cid] = None
+                    self.bot.server_settings.pop(str(guild.id), None)
+                    return
                 except Exception as e:
                     self.log.error("fetch_channel fail for %s: %s", guild.name, e)
                     self._channel_cache[cid] = None

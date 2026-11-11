@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GD Object Replacer</title>
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      background: #1f1f2b;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 15px;
+    }
+
+    .box {
+      width: 500px;
+      background: #2b2b3d;
+      border-radius: 10px;
+      padding: 25px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 5px;
+      font-size: 24px;
+    }
+
+    .sub {
+      text-align: center;
+      opacity: 0.6;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    #drop {
+      border: 2px dashed rgba(255, 255, 255, 0.3);
+      border-radius: 8px;
+      text-align: center;
+      padding: 30px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    #drop:hover {
+      border-color: #4f9bff;
+      background: rgba(79, 155, 255, 0.1);
+    }
+
+    #file {
+      display: none;
+    }
+
+    #info {
+      display: none;
+      margin-top: 15px;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 12px;
+      border-radius: 8px;
+    }
+
+    #info.active {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    #ids {
+      display: none;
+      margin-top: 15px;
+    }
+
+    #ids.active {
+      display: block;
+    }
+
+    .idlist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .idlist span {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 5px 9px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+      align-items: center;
+    }
+
+    input {
+      flex: 1;
+      padding: 10px;
+      border-radius: 6px;
+      border: none;
+      background: #1f1f2b;
+      color: white;
+      outline: none;
+    }
+
+    button {
+      width: 100%;
+      margin-top: 15px;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      background: #4f9bff;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    #status {
+      text-align: center;
+      margin-top: 10px;
+      opacity: 0.7;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="box">
+    <h1>GD Object Replacer</h1>
+    <div class="sub">Replace any object ID with another</div>
+
+    <div id="drop">
+      <div>Drop .gmd or .gdlvl here</div>
+      <small style="opacity: 0.6;">or click to browse</small>
+    </div>
+    <input type="file" id="file" accept=".gmd,.gdlvl">
+
+    <div id="info">
+      <div>
+        <div id="fname"></div>
+        <small style="opacity: 0.6;" id="fmeta"></small>
+      </div>
+      <button style="width: auto; margin: 0; padding: 6px 10px; background: rgba(255,80,80,0.8);" id="clear">Remove</button>
+    </div>
+
+    <div id="ids">
+      <div style="opacity: 0.8;">Object IDs in this level</div>
+      <div class="idlist" id="idlist"></div>
+    </div>
+
+    <div class="row">
+      <input id="from" type="number" placeholder="Find ID">
+      <span>→</span>
+      <input id="to" type="number" placeholder="Replace with ID">
+    </div>
+
+    <button id="convert" disabled>Replace & Download</button>
+    <div id="status"></div>
+  </div>
+
+  <script>
+    const drop = document.getElementById('drop');
+    const file = document.getElementById('file');
+    const info = document.getElementById('info');
+    const fname = document.getElementById('fname');
+    const fmeta = document.getElementById('fmeta');
+    const clear = document.getElementById('clear');
+    const ids = document.getElementById('ids');
+    const idlist = document.getElementById('idlist');
+    const from = document.getElementById('from');
+    const to = document.getElementById('to');
+    const convert = document.getElementById('convert');
+    const status = document.getElementById('status');
+
+    let raw = null;
+    let type = null;
+    let xml = null;
+    let k4 = null;
+    let level = null;
+    let header = null;
+    let objs = [];
+
+    drop.onclick = () => file.click();
+    file.onchange = e => { if (e.target.files[0]) load(e.target.files[0]); }
+    drop.ondragover = e => { e.preventDefault(); }
+    drop.ondrop = e => { e.preventDefault(); if (e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); }
+    clear.onclick = reset;
+    from.oninput = check;
+    to.oninput = check;
+    convert.onclick = go;
+
+    function reset() {
+      raw = null; type = null; xml = null; k4 = null; level = null; header = null; objs = [];
+      file.value = '';
+      drop.style.display = 'block';
+      info.classList.remove('active');
+      ids.classList.remove('active');
+      from.value = ''; to.value = '';
+      convert.disabled = true;
+      status.textContent = '';
+    }
+
+    function b64urlToBytes(s) {
+      s = s.replace(/-/g, '+').replace(/_/g, '/');
+      while (s.length % 4) s += '=';
+      let bin = atob(s);
+      let arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return arr;
+    }
+
+    function bytesToB64url(arr) {
+      let bin = '';
+      for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
+
+    function strToBytes(s) {
+      let arr = new Uint8Array(s.length);
+      for (let i = 0; i < s.length; i++) arr[i] = s.charCodeAt(i);
+      return arr;
+    }
+
+    async function load(f) {
+      status.textContent = 'Loading...';
+      let buf = await f.arrayBuffer();
+      let bytes = new Uint8Array(buf);
+      let head = '';
+      for (let i = 0; i < Math.min(40, bytes.length); i++) head += String.fromCharCode(bytes[i]);
+
+      if (head.includes('<') && head.includes('>')) {
+        type = 'gmd';
+        xml = new TextDecoder().decode(bytes);
+      } else {
+        type = 'gdlvl';
+        let txt = '';
+        for (let i = 0; i < bytes.length; i++) txt += String.fromCharCode(bytes[i]);
+        txt = txt.replace(/\s/g, '');
+        let dec = pako.ungzip(b64urlToBytes(txt));
+        xml = new TextDecoder().decode(dec);
+      }
+
+      let m = xml.match(/<k>k4<\/k><s>(.*?)<\/s>/s);
+      if (!m) return status.textContent = 'Invalid file';
+      k4 = m[1];
+      let k4bytes = pako.ungzip(b64urlToBytes(k4.replace(/-/g, '+').replace(/_/g, '/')));
+      level = new TextDecoder().decode(k4bytes);
+      let p = level.split(';');
+      header = p[0];
+      objs = p.slice(1).filter(x => x);
+
+      let map = {};
+      for (let o of objs) {
+        if (o.startsWith('1,')) {
+          let id = o.split(',')[1];
+          map[id] = (map[id] || 0) + 1;
+        }
+      }
+
+      idlist.innerHTML = '';
+      Object.keys(map).sort((a, b) => map[b] - map[a]).forEach(id => {
+        let s = document.createElement('span');
+        s.textContent = id + ' (' + map[id] + ')';
+        idlist.appendChild(s);
+      });
+
+      drop.style.display = 'none';
+      info.classList.add('active');
+      ids.classList.add('active');
+      fname.textContent = f.name;
+      fmeta.textContent = type.toUpperCase() + ' • ' + objs.length + ' objects';
+      status.textContent = '';
+      check();
+    }
+
+    function check() {
+      if (from.value && to.value && objs.length) convert.disabled = false;
+      else convert.disabled = true;
+    }
+
+    function go() {
+      let f = from.value.trim();
+      let t = to.value.trim();
+      if (!f || !t) return;
+
+      let out = objs.map(o => {
+        if (o.startsWith('1,')) {
+          let parts = o.split(',');
+          if (parts[1] == f) {
+            parts[1] = t;
+            return parts.join(',');
+          }
+        }
+        return o;
+      });
+
+      let newLevel = header + ';' + out.join(';') + ';';
+      let gz = pako.gzip(strToBytes(newLevel));
+      let newK4 = bytesToB64url(gz);
+
+      let newXml = xml.replace(/(<k>k4<\/k><s>).*?(<\/s>)/s, '$1' + newK4 + '$2');
+      newXml = newXml.replace(/(<k>k48<\/k><[si]>).*?(<\/[si]>)/, '$1' + out.length + '$2');
+
+      if (type == 'gmd') {
+        let blob = new Blob([newXml], { type: 'text/xml' });
+        let a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (currentFileName() || 'level').replace(/\.gmd$/i, '') + '_replaced.gmd';
+        a.click();
+      } else {
+        let xgz = pako.gzip(strToBytes(newXml));
+        let xb64 = bytesToB64url(xgz);
+        let blob = new Blob([xb64], { type: 'application/octet-stream' });
+        let a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (currentFileName() || 'level').replace(/\.gdlvl$/i, '') + '_replaced.gdlvl';
+        a.click();
+      }
+
+      status.textContent = 'Downloaded';
+    }
+
+    function currentFileName() {
+      return file.files[0] ? file.files[0].name : null;
+    }
+  </script>
+</body>
+
+</html>

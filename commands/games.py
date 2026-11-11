@@ -333,17 +333,31 @@ class GamesCog(commands.Cog):
                 if ch:
                     target_channel = ch
 
+        local_img = get_local_bird_image(matched_bird['name'])
         sticker = None
-        try:
-            sticker = await self.bot.fetch_sticker(matched_bird["sticker_id"])
-        except Exception:
-            pass
+        if not local_img:
+            sid = matched_bird.get("sticker_id")
+            if sid:
+                core_cog = self.bot.get_cog("CoreCog")
+                sticker_cache = getattr(core_cog, "_sticker_cache", {}) if core_cog else {}
+                if sid in sticker_cache:
+                    sticker = sticker_cache[sid]
+                else:
+                    try:
+                        sticker = await self.bot.fetch_sticker(sid)
+                        if core_cog and hasattr(core_cog, "_sticker_cache"):
+                            core_cog._sticker_cache[sid] = sticker
+                    except Exception:
+                        pass
 
         await interaction.followup.send(f"✅ Bird **{matched_bird['name']}** successfully created!", ephemeral=True)
         content_text = f"A wild **{matched_bird['name']}** appeared! Type **bird** to catch it!\n-# (fake)"
 
         try:
-            if sticker and isinstance(target_channel, discord.TextChannel):
+            if local_img:
+                file = discord.File(local_img, filename=f"{matched_bird['name']}.png")
+                await target_channel.send(content=content_text, file=file)
+            elif sticker and isinstance(target_channel, discord.TextChannel):
                 try:
                     await target_channel.send(content=content_text, stickers=[sticker])
                 except discord.HTTPException:
@@ -543,15 +557,25 @@ class GamesCog(commands.Cog):
         state["is_birdpoop"] = False
         state["failed_users"] = set()
 
+        local_img = get_local_bird_image(matched['name'])
         sticker = None
-        try:
-            sticker = await self.bot.fetch_sticker(matched["sticker_id"])
-        except Exception:
-            pass
+        if not local_img:
+            sid = matched.get("sticker_id")
+            if sid:
+                core_cog = self.bot.get_cog("CoreCog")
+                sticker_cache = getattr(core_cog, "_sticker_cache", {}) if core_cog else {}
+                if sid in sticker_cache:
+                    sticker = sticker_cache[sid]
+                else:
+                    try:
+                        sticker = await self.bot.fetch_sticker(sid)
+                        if core_cog and hasattr(core_cog, "_sticker_cache"):
+                            core_cog._sticker_cache[sid] = sticker
+                    except Exception:
+                        pass
 
         content_text = f"A wild **{matched['name']}** appeared! Type **bird** to catch it!"
         msg = None
-        local_img = get_local_bird_image(matched['name'])
         if local_img:
             file = discord.File(local_img, filename=f"{matched['name']}.png")
             msg = await channel.send(content=content_text, file=file)

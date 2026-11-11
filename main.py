@@ -202,6 +202,9 @@ db.execute("CREATE INDEX IF NOT EXISTS idx_inventories_user ON inventories (user
 db.execute("CREATE INDEX IF NOT EXISTS idx_achievements_guild ON achievements (guild_id)")
 db.execute("CREATE INDEX IF NOT EXISTS idx_pip_claims_guild ON pip_claims (guild_id)")
 db.execute("CREATE INDEX IF NOT EXISTS idx_birdpoop_penalties_guild ON birdpoop_penalties (guild_id)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_birdbot_bans_user ON birdbot_bans (user_id)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_birdcage_lookup ON birdcage (guild_id, user_id)")
+db.execute("CREATE INDEX IF NOT EXISTS idx_birdcoin_lookup ON birdcoin (guild_id, user_id)")
 
 # --- SABİT KUŞLARI VERİTABANINA YÜKLE ---
 default_birds = [

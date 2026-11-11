@@ -122,11 +122,16 @@ class EconomyCog(commands.Cog):
 
         lb_text = ""
         for index, (user_id, total_val, total_count) in enumerate(top_users, start=1):
-            try:
-                user = await self.bot.fetch_user(int(user_id))
-                username = user.name
-            except Exception:
-                username = f"User_{user_id}"
+            uid = int(user_id)
+            user = self.bot.get_user(uid)
+            if not user and interaction.guild:
+                user = interaction.guild.get_member(uid)
+            if not user:
+                try:
+                    user = await self.bot.fetch_user(uid)
+                except Exception:
+                    user = None
+            username = user.name if user else f"User_{user_id}"
 
             medal = "🥇" if index == 1 else "🥈" if index == 2 else "🥉" if index == 3 else f"`#{index}`"
             lb_text += f"{medal} **{username}** — `{total_val}` points *({total_count} birds)*\n"

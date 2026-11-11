@@ -300,6 +300,7 @@ class BirdCageCog(commands.Cog):
         cages = self.bot.db.get_all_birdcages()
         if not cages:
             return
+        updated_cages = []
         for cage in cages:
             try:
                 if not cage["birds"]:
@@ -313,12 +314,14 @@ class BirdCageCog(commands.Cog):
                 if cage["accumulated"] >= limit:
                     continue
                 cage["accumulated"] = min(cage["accumulated"] + income_per_tick, limit)
-                self.bot.db.save_birdcage(
-                    cage["guild_id"], cage["user_id"],
-                    cage["birds"], cage["level"], cage["accumulated"],
-                )
+                updated_cages.append(cage)
             except Exception as e:
                 self.log.error("income tick fail for %s/%s: %s", cage["guild_id"], cage["user_id"], e)
+        if updated_cages:
+            try:
+                self.bot.db.save_birdcages_batch(updated_cages)
+            except Exception as e:
+                self.log.error("batch save birdcages fail: %s", e)
 
     @birdcage_income.before_loop
     async def before_birdcage_income(self):
