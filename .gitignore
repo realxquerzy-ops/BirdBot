@@ -13,3 +13,15 @@ bot_data.db
 
 # Env files
 .env
+
+# Unity / scratch
+Library/
+ProjectSettings/
+UserSettings/
+*.meta
+*.png
+!assets/**
+*.html
+!web/**
+*.vbs
+*.ps1
